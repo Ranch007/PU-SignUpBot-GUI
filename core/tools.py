@@ -6,6 +6,59 @@ from typing import Dict, List
 
 from core.headers import HEADERS_GET_SCHOOL, HEADERS_ACTIVITY
 
+MAX_RETRIES = 3
+RETRY_BACKOFF = 2  # 指数退避基数
+
+
+def _post_with_retry(url: str, headers: Dict, json_data: Dict,
+                     timeout: int = 10, label: str = "") -> requests.Response:
+    """带重试的 POST 请求，处理 SSL/连接临时故障"""
+    last_error = None
+    for attempt in range(MAX_RETRIES):
+        try:
+            resp = requests.post(url, headers=headers, json=json_data, timeout=timeout)
+            resp.raise_for_status()
+            return resp
+        except (requests.exceptions.SSLError,
+                requests.exceptions.ConnectionError,
+                requests.exceptions.Timeout) as e:
+            last_error = e
+            if attempt < MAX_RETRIES - 1:
+                wait = RETRY_BACKOFF ** attempt
+                logger.warning(
+                    f"{label} 网络异常，{wait}s 后重试 "
+                    f"({attempt + 1}/{MAX_RETRIES}): {e}"
+                )
+                time.sleep(wait)
+        except requests.exceptions.HTTPError:
+            raise
+    raise last_error
+
+
+def _get_with_retry(url: str, headers: Dict, timeout: int = 10,
+                    label: str = "") -> requests.Response:
+    """带重试的 GET 请求"""
+    last_error = None
+    for attempt in range(MAX_RETRIES):
+        try:
+            resp = requests.get(url, headers=headers, timeout=timeout)
+            resp.raise_for_status()
+            return resp
+        except (requests.exceptions.SSLError,
+                requests.exceptions.ConnectionError,
+                requests.exceptions.Timeout) as e:
+            last_error = e
+            if attempt < MAX_RETRIES - 1:
+                wait = RETRY_BACKOFF ** attempt
+                logger.warning(
+                    f"{label} 网络异常，{wait}s 后重试 "
+                    f"({attempt + 1}/{MAX_RETRIES}): {e}"
+                )
+                time.sleep(wait)
+        except requests.exceptions.HTTPError:
+            raise
+    raise last_error
+
 
 def get_token(userData: Dict) -> str | None:
     """登录获取 token"""
@@ -20,11 +73,12 @@ def get_token(userData: Dict) -> str | None:
             "sid": int(userData.get("sid")),
             "device": "pc",
         }
-        response = requests.post(login_url, headers=HEADERS_LOGIN, json=payload)
-        response.raise_for_status()
+        response = _post_with_retry(
+            login_url, HEADERS_LOGIN, payload,
+            label=f"登录({userData['userName']})"
+        )
 
         token = response.json().get("data", {}).get("token")
-
         if token:
             logger.info(f"用户 {userData['userName']} 登录成功")
             return token
@@ -34,11 +88,8 @@ def get_token(userData: Dict) -> str | None:
     except requests.exceptions.HTTPError as e:
         logger.error(f"用户 {userData['userName']} 登录失败，HTTP错误: {str(e)}")
         return None
-    except requests.exceptions.ConnectionError as e:
-        logger.error(f"用户 {userData['userName']} 登录失败，网络错误: {str(e)}")
-        return None
     except Exception as e:
-        logger.error(f"用户 {userData['userName']} 登录失败，未知错误: {str(e)}")
+        logger.error(f"用户 {userData['userName']} 登录失败: {str(e)}")
         return None
 
 
@@ -48,13 +99,18 @@ def get_sid(school_name: str) -> int | None:
 
     def _get_school_list() -> Dict:
         url = "https://pocketuni.net/index.php?app=api&mod=Sitelist&act=getSchools"
-        response = requests.get(url, headers=HEADERS_GET_SCHOOL)
+        response = _get_with_retry(url, HEADERS_GET_SCHOOL, label="获取学校列表")
         return response.json()
 
     def _find_schools(school_list, name) -> List[Dict]:
         return [s for s in school_list if name in s["name"]]
 
-    school_list = _get_school_list()
+    try:
+        school_list = _get_school_list()
+    except Exception as e:
+        logger.error(f"获取学校列表失败: {str(e)}")
+        return None
+
     matching = _find_schools(school_list, school_name)
 
     if not matching:
@@ -81,8 +137,9 @@ def get_activity_type(token: str, sid: str) -> List | None:
     headers = HEADERS_ACTIVITY.copy()
     headers["Authorization"] = f"Bearer {token}:{sid}"
     try:
-        response = requests.post(type_url, headers=headers, json=payload)
-        response.raise_for_status()
+        response = _post_with_retry(
+            type_url, headers, payload, label="获取活动类型"
+        )
         res = []
         data = response.json().get("data", {}).get("list", [])
         for d in data:
@@ -93,7 +150,7 @@ def get_activity_type(token: str, sid: str) -> List | None:
         logger.error(f"获取活动类型失败，HTTP错误: {str(e)}")
         return None
     except Exception as e:
-        logger.error(f"获取活动类型失败，未知错误: {str(e)}")
+        logger.error(f"获取活动类型失败: {str(e)}")
         return None
 
 
@@ -103,16 +160,17 @@ def get_info(activity_id: str, token: str, sid: str) -> Dict:
     headers["Authorization"] = f"Bearer {token}:{str(sid)}"
     payload = {"id": int(activity_id)}
     try:
-        response = requests.post(
+        response = _post_with_retry(
             "https://apis.pocketuni.net/apis/activity/info",
-            headers=headers,
-            json=payload,
+            headers, payload, label=f"获取活动{activity_id}信息"
         )
-        response.raise_for_status()
+        return response.json().get("data", {}).get("baseInfo", {})
     except requests.exceptions.HTTPError as e:
         logger.error(f"获取活动信息失败，HTTP错误: {str(e)}")
         return {}
-    return response.json().get("data", {}).get("baseInfo", {})
+    except Exception as e:
+        logger.error(f"获取活动信息失败: {str(e)}")
+        return {}
 
 
 def get_single_activity(activity_id: str, info: Dict) -> Dict:
@@ -155,13 +213,14 @@ def get_allowed_activity_list(user: Dict) -> List:
         payload["oids"] = user["oids"]
 
     try:
-        response = requests.post(activity_url, headers=headers, json=payload)
-        response.raise_for_status()
+        response = _post_with_retry(
+            activity_url, headers, payload, label="获取活动列表首页"
+        )
     except requests.exceptions.HTTPError as e:
         logger.error(f"获取活动列表失败，HTTP错误: {str(e)}")
         return []
     except Exception as e:
-        logger.error(f"获取活动列表失败，未知错误: {str(e)}")
+        logger.error(f"获取活动列表失败: {str(e)}")
         return []
 
     try:
@@ -174,8 +233,9 @@ def get_allowed_activity_list(user: Dict) -> List:
     for page in range(1, pages + 1):
         payload["page"] = page
         try:
-            response = requests.post(activity_url, headers=headers, json=payload)
-            response.raise_for_status()
+            response = _post_with_retry(
+                activity_url, headers, payload, label=f"获取活动列表第{page}页"
+            )
             for activity in response.json().get("data", {}).get("list", []):
                 info = get_info(activity.get("id"), user.get("token"), user.get("sid"))
                 if not _is_valid(info, user.get("college", "")):
