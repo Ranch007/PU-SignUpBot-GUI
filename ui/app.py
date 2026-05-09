@@ -18,9 +18,14 @@ class App(ctk.CTk):
         self.minsize(960, 640)
         self.geometry("1100x740")
 
-        icon_path = os.path.join(os.path.dirname(__file__), "PU.ico")
+        icon_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "PU.ico")
         if os.path.exists(icon_path):
-            self.iconbitmap(icon_path)
+            try:
+                from PIL import Image, ImageTk
+                img = Image.open(icon_path)
+                self.iconphoto(True, ImageTk.PhotoImage(img))
+            except Exception:
+                pass
 
         ctk.set_appearance_mode("system")
         ctk.set_default_color_theme("blue")
