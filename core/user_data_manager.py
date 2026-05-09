@@ -7,9 +7,11 @@ from loguru import logger
 
 
 class UserDataManager:
-    def __init__(self, file_path: str):
+    def __init__(self, file_path: str, settings_path: str = "settings.json"):
         self.file_path = file_path
+        self.settings_path = settings_path
         self.user_datas: List[Dict] = self.read_user_data()
+        self.settings: Dict = self._read_settings()
 
     def read_user_data(self) -> List[Dict]:
         logger.info("开始加载用户数据")
@@ -93,3 +95,36 @@ class UserDataManager:
         for user in self.user_datas:
             single_account(user)
         logger.info("所有用户报名任务处理完成")
+
+    # -------- settings.json 管理 --------
+
+    def _read_settings(self) -> Dict:
+        if not os.path.exists(self.settings_path):
+            return {"pending_monitors": []}
+        with open(self.settings_path, "r", encoding="utf-8") as f:
+            try:
+                return json.load(f)
+            except json.JSONDecodeError:
+                return {"pending_monitors": []}
+
+    def _write_settings(self) -> None:
+        with open(self.settings_path, "w", encoding="utf-8") as f:
+            json.dump(self.settings, f, indent=4, ensure_ascii=False)
+
+    def add_monitor(self, user_name: str, activity_id: str, start_time: str) -> None:
+        self.settings.setdefault("pending_monitors", []).append({
+            "userName": user_name,
+            "activityId": activity_id,
+            "startTime": start_time,
+        })
+        self._write_settings()
+
+    def remove_monitor(self, user_name: str, activity_id: str) -> None:
+        self.settings["pending_monitors"] = [
+            m for m in self.settings.get("pending_monitors", [])
+            if not (m["userName"] == user_name and m["activityId"] == activity_id)
+        ]
+        self._write_settings()
+
+    def get_pending_monitors(self) -> List[Dict]:
+        return self.settings.get("pending_monitors", [])
