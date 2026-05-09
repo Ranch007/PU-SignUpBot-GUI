@@ -4,14 +4,14 @@ import customtkinter as ctk
 from loguru import logger
 
 from ui.styles import (
-    FONT_MD, FONT_SM,
-    PAD_LG, PAD_MD,
+    FONT_MD, PAD_LG, PAD_MD,
     PRIMARY, PRIMARY_HOVER,
     LIGHT_NAV, DARK_NAV,
     LIGHT_BG, DARK_BG,
 )
 from ui.pages.dashboard_page import DashboardPage
 from ui.pages.add_user_page import AddUserPage
+from ui.pages.activity_select_page import ActivitySelectPage
 from ui.pages.signup_page import SignupPage
 
 
@@ -57,6 +57,7 @@ class App(ctk.CTk):
         nav_items = [
             ("dashboard", "首页"),
             ("add_user", "添加用户"),
+            ("activity_select", "选择活动"),
             ("signup", "开始报名"),
         ]
         for key, label in nav_items:
@@ -87,43 +88,49 @@ class App(ctk.CTk):
         self.pages = {}
         self.current_page = None
 
-    def _navigate(self, key: str):
-        # 高亮
+    def _navigate(self, key: str, **kwargs):
         for k, btn in self.nav_buttons.items():
             btn.configure(fg_color=PRIMARY if k == key else "transparent")
 
-        # 切换页面
         if self.current_page:
             self.current_page.pack_forget()
 
-        if key not in self.pages:
-            if key == "dashboard":
-                page = DashboardPage(self.content_frame, self.user_manager)
-                page.add_btn.configure(command=lambda: self._navigate("add_user"))
-                page.signup_btn.configure(command=lambda: self._navigate("signup"))
-            elif key == "add_user":
-                page = AddUserPage(
-                    self.content_frame,
-                    self.user_manager,
-                    on_done=lambda: self._navigate("dashboard"),
-                )
-            elif key == "signup":
-                page = SignupPage(
-                    self.content_frame,
-                    self.user_manager,
-                    self.log_queue,
-                )
-            else:
-                return
+        # 每次切换页面时重建或刷新
+        if key in self.pages:
+            self.pages[key].destroy()
+            del self.pages[key]
 
-            page.pack(fill="both", expand=True)
-            self.pages[key] = page
+        if key == "dashboard":
+            page = DashboardPage(self.content_frame, self.user_manager)
+            page.add_btn.configure(command=lambda: self._navigate("add_user"))
+            page.signup_btn.configure(command=lambda: self._navigate("signup"))
+            page.set_nav_select_activity(
+                lambda u: self._navigate("activity_select", username=u)
+            )
+
+        elif key == "add_user":
+            page = AddUserPage(
+                self.content_frame,
+                self.user_manager,
+                on_done=lambda: self._navigate("dashboard"),
+            )
+
+        elif key == "activity_select":
+            page = ActivitySelectPage(self.content_frame, self.user_manager)
+            page.refresh()
+            if "username" in kwargs:
+                page.after(50, lambda: page.select_user(kwargs["username"]))
+
+        elif key == "signup":
+            page = SignupPage(
+                self.content_frame, self.user_manager, self.log_queue
+            )
+
         else:
-            page = self.pages[key]
-            page.pack(fill="both", expand=True)
-            if hasattr(page, "refresh"):
-                page.refresh()
+            return
 
+        page.pack(fill="both", expand=True)
+        self.pages[key] = page
         self.current_page = page
 
     def _setup_log_pipeline(self):

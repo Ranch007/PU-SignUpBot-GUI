@@ -10,11 +10,16 @@ class DashboardPage(ctk.CTkFrame):
         super().__init__(parent, corner_radius=0, fg_color="transparent", **kwargs)
         self.user_manager = user_manager
         self.cards = []
+        self._on_nav_select_activity = None
 
         self._build_header()
         self._build_grid()
         self._build_statusbar()
         self.refresh()
+
+    def set_nav_select_activity(self, callback):
+        """设置从 dashboard 选活动时的导航回调"""
+        self._on_nav_select_activity = callback
 
     def _build_header(self):
         header = ctk.CTkFrame(self, fg_color="transparent")
@@ -90,7 +95,7 @@ class DashboardPage(ctk.CTkFrame):
             self.cards.append(card)
 
         self.status_label.configure(
-            text=f"用户: {len(users)}  |  活动: {total_activities}  |  报名中: 0"
+            text=f"用户: {len(users)}  |  活动: {total_activities}"
         )
 
     def _on_delete(self, username: str):
@@ -99,6 +104,5 @@ class DashboardPage(ctk.CTkFrame):
         self.refresh()
 
     def _on_select_activity(self, username: str):
-        from ui.pages.activity_select_page import ActivitySelectPage
-
-        ActivitySelectPage.show_dialog(self, username, self.user_manager, self.refresh)
+        if self._on_nav_select_activity:
+            self._on_nav_select_activity(username)
