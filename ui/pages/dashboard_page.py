@@ -102,8 +102,9 @@ class DashboardPage(ctk.CTkFrame):
             card.grid(row=row, column=col, padx=PAD_MD, pady=PAD_MD, sticky="nsew")
             self.cards.append(card)
 
-        self.status_label.configure(text=f"用户: {len(users)}  |  活动: {total}")
+        self.status_label.configure(text=f"用户: {len(users)}/6  |  活动: {total}")
         self.signup_btn.configure(state="normal" if users else "disabled")
+        self.add_btn.configure(state="normal" if len(users) < 6 else "disabled")
 
     # ======================== 内联表单管理 ========================
 

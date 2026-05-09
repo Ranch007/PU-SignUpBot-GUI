@@ -156,7 +156,9 @@ class AddUserInline(ctk.CTkFrame):
             return
 
         self._data["token"] = token
-        self.user_manager.add_user(self._data)
+        if not self.user_manager.add_user(self._data):
+            self._status.configure(text="用户数已达上限（6个），请先删除旧用户", text_color="#e74c3c")
+            return
         self.user_manager.write_user_data()
         self._on_done()
 
