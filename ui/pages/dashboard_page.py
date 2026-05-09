@@ -126,6 +126,8 @@ class DashboardPage(ctk.CTkFrame):
         self.cards_frame.pack(fill="both", expand=True, pady=(0, PAD_MD))
 
     def _show_add_user(self):
+        for child in self.inline_frame.winfo_children():
+            child.destroy()
         from ui.pages.add_user_inline import AddUserInline
         w = AddUserInline(
             self.inline_frame,
@@ -133,12 +135,11 @@ class DashboardPage(ctk.CTkFrame):
             on_done=lambda: [self._hide_inline(), self.refresh()],
             on_cancel=self._hide_inline,
         )
-        # 清除旧子组件
-        for child in self.inline_frame.winfo_children():
-            child.destroy()
         self._show_inline(w)
 
     def _show_signup(self):
+        for child in self.inline_frame.winfo_children():
+            child.destroy()
         from ui.pages.signup_inline import SignupInline
         w = SignupInline(
             self.inline_frame,
@@ -146,8 +147,6 @@ class DashboardPage(ctk.CTkFrame):
             self.log_queue,
             on_close=self._hide_inline,
         )
-        for child in self.inline_frame.winfo_children():
-            child.destroy()
         self._show_inline(w)
 
     # ======================== 回调 ========================
@@ -158,6 +157,8 @@ class DashboardPage(ctk.CTkFrame):
         self.refresh()
 
     def _on_select_activity(self, username: str):
+        for child in self.inline_frame.winfo_children():
+            child.destroy()
         from ui.pages.activity_select_inline import ActivitySelectInline
         w = ActivitySelectInline(
             self.inline_frame,
@@ -165,6 +166,4 @@ class DashboardPage(ctk.CTkFrame):
             self.user_manager,
             on_close=lambda: [self._hide_inline(), self.refresh()],
         )
-        for child in self.inline_frame.winfo_children():
-            child.destroy()
         self._show_inline(w)
