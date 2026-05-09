@@ -104,7 +104,6 @@ class DashboardPage(ctk.CTkFrame):
 
         self.status_label.configure(text=f"用户: {len(users)}/6  |  活动: {total}")
         self.signup_btn.configure(state="normal" if users else "disabled")
-        self.add_btn.configure(state="normal" if len(users) < 6 else "disabled")
 
     # ======================== 内联表单管理 ========================
 
@@ -124,6 +123,9 @@ class DashboardPage(ctk.CTkFrame):
         self.cards_frame.pack(fill="both", expand=True, pady=(0, PAD_MD))
 
     def _show_add_user(self):
+        if len(self.user_manager.user_datas) >= 6:
+            self._show_notification("用户添加数量已达上限，请删除后再添加！")
+            return
         for child in self.inline_frame.winfo_children():
             child.destroy()
         from ui.pages.add_user_inline import AddUserInline
@@ -134,6 +136,15 @@ class DashboardPage(ctk.CTkFrame):
             on_cancel=self._hide_inline,
         )
         self._show_inline(w)
+
+    def _show_notification(self, message: str):
+        """在页面顶部显示短暂通知"""
+        banner = ctk.CTkFrame(self, fg_color="#e74c3c", corner_radius=0, height=40)
+        banner.pack(fill="x", side="top", before=self.main_area)
+        ctk.CTkLabel(
+            banner, text=message, font=(ctk.CTkFont, FONT_MD), text_color="white"
+        ).pack(expand=True)
+        self.after(2500, banner.destroy)
 
     def _show_signup(self):
         for child in self.inline_frame.winfo_children():
