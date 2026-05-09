@@ -1,4 +1,5 @@
 """主窗口：单页布局，分区显示"""
+import os
 import queue
 import customtkinter as ctk
 from loguru import logger
@@ -13,9 +14,13 @@ class App(ctk.CTk):
         self.user_manager = user_manager
         self.log_queue = queue.Queue()
 
-        self.title("PU-SignUpBot - PU 口袋校园报名助手")
+        self.title("PU-SignUpBot   PU口袋校园报名助手")
         self.minsize(960, 640)
         self.geometry("1100x740")
+
+        icon_path = os.path.join(os.path.dirname(__file__), "PU.ico")
+        if os.path.exists(icon_path):
+            self.iconbitmap(icon_path)
 
         ctk.set_appearance_mode("system")
         ctk.set_default_color_theme("blue")
