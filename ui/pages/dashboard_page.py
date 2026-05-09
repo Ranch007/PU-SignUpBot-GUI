@@ -42,7 +42,11 @@ class DashboardPage(ctk.CTkFrame):
         self.add_btn.pack(side="left", padx=(0, PAD_SM))
 
         self.signup_btn = ctk.CTkButton(btn_frame, text="▶ 全部报名", fg_color="#2e8b57", hover_color="#1e6b3a", height=36, font=(ctk.CTkFont, FONT_MD), command=self._show_signup)
-        self.signup_btn.pack(side="left")
+        self.signup_btn.pack(side="left", padx=(0, PAD_SM))
+
+        self._dark_mode = False
+        self.theme_btn = ctk.CTkButton(btn_frame, text="🌙", width=40, height=36, fg_color="transparent", hover_color=("gray80", "gray30"), font=(ctk.CTkFont, FONT_LG), command=self._toggle_theme)
+        self.theme_btn.pack(side="left")
 
     # ======================== 主体 ========================
 
@@ -159,6 +163,11 @@ class DashboardPage(ctk.CTkFrame):
         self._show_inline(w)
 
     # ======================== 回调 ========================
+
+    def _toggle_theme(self):
+        self._dark_mode = not self._dark_mode
+        ctk.set_appearance_mode("dark" if self._dark_mode else "light")
+        self.theme_btn.configure(text="☀" if self._dark_mode else "🌙")
 
     def _on_delete(self, username: str):
         self.user_manager.remove_user(username)
