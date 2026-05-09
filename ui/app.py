@@ -129,13 +129,17 @@ class App(ctk.CTk):
     def _setup_log_pipeline(self):
         from loguru import logger as loguru_logger
 
-        def enqueue(record):
-            self.log_queue.put((record["level"].name, record["message"]))
+        def enqueue(msg):
+            line = str(msg).rstrip()
+            if "|" in line:
+                level, _, text = line.partition("|")
+                self.log_queue.put((level.strip(), text.strip()))
+            else:
+                self.log_queue.put(("INFO", line))
 
-        # 保留已有的文件和控制台 handler，追加队列 handler
-        sink_id = loguru_logger.add(
+        loguru_logger.add(
             enqueue,
             format="{level.name}|{message}",
-            enqueue=True,
+            level="INFO",
         )
         logger.info("GUI 日志管道已初始化")
