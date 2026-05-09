@@ -89,10 +89,7 @@ class DashboardPage(ctk.CTkFrame):
         total = sum(len(u.get("activity_ids", [])) for u in users)
 
         if not users:
-            ctk.CTkLabel(
-                self.cards_frame, text="暂无用户\n点击「＋ 添加用户」开始",
-                font=(ctk.CTkFont, FONT_LG), text_color="gray",
-            ).grid(row=0, column=0, columnspan=3, pady=80)
+            self.after(200, self._show_add_user)
 
         for i, user in enumerate(users):
             card = UserCard(
