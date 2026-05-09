@@ -20,17 +20,7 @@ class App(ctk.CTk):
 
         icon_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "PU.ico")
         if os.path.exists(icon_path):
-            try:
-                from PIL import Image
-                import tempfile
-                img = Image.open(icon_path)
-                if img.mode != "RGBA":
-                    img = img.convert("RGBA")
-                tmp_ico = os.path.join(tempfile.gettempdir(), "PU_real.ico")
-                img.save(tmp_ico, format="ICO", sizes=[(32, 32)])
-                self.iconbitmap(os.path.abspath(tmp_ico))
-            except Exception:
-                pass
+            self.iconbitmap(icon_path)
 
         ctk.set_appearance_mode("system")
         ctk.set_default_color_theme("blue")
