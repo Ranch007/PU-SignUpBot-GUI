@@ -4,7 +4,7 @@ PU 口袋校园活动自动报名助手 —— 带图形界面的桌面应用，
 
 ## 缘起
 
-本项目受 [RedForestLonvor](https://github.com/RedForestLonvor) 开发的 [PU-SignUpBot](https://github.com/RedForestLonvor/PU-SignUpBot) 启发。原项目功能完善，但为命令行（CLI）版本，非计算机专业的同学操作门槛较高——需要手动敲命令、编辑 JSON 配置文件，稍有不慎就容易出错。
+本项目受 [_RedForest](https://github.com/RedForestLonvor) 开发的 [PU-SignUpBot](https://github.com/RedForestLonvor/PU-SignUpBot) 启发。原项目功能完善，但为命令行（CLI）版本，非计算机专业的同学操作门槛较高——需要手动敲命令、编辑 JSON 配置文件，稍有不慎就容易出错。
 
 本次重构将其改造为带图形界面（GUI）的桌面应用，使用 [CustomTkinter](https://github.com/TomSchimansky/CustomTkinter) 构建，目标是让不熟悉命令行的同学也能轻松使用：**双击打开、点选活动、一键报名**。
 
