@@ -22,6 +22,7 @@ class ActivityBot:
         self._lock = threading.Lock()
         self._abort = False
         self._callback: Optional[Callable] = None
+        self._logged_errors: set = set()
 
         if not self.cur_token:
             self._refresh_token()
@@ -208,12 +209,27 @@ class ActivityBot:
         return None
 
     def _precise_wait_until(self, target_time: datetime, advance_ms: int = 50):
+        logger.info(
+            f"用户 {self.user_data['userName']} 精确等待开始，"
+            f"目标: {target_time.strftime('%H:%M:%S.%f')[:-3]}, "
+            f"提前 {advance_ms}ms 开始"
+        )
+        last_log = 0.0
         while not self._abort:
             current_time = self._get_corrected_now()
             remaining = (target_time - current_time).total_seconds()
 
             if remaining <= advance_ms / 1000.0:
+                logger.info(
+                    f"用户 {self.user_data['userName']} 已到达目标时间（剩余 {remaining*1000:.0f}ms），开始报名"
+                )
                 break
+
+            if remaining > 10 and remaining < last_log - 5:
+                logger.info(
+                    f"用户 {self.user_data['userName']} 距离开始还有 {remaining:.0f} 秒"
+                )
+                last_log = remaining
 
             if remaining > 1:
                 time.sleep(remaining - 0.5)
@@ -278,7 +294,9 @@ class ActivityBot:
                             self._callback("success", f"活动 {activity_id} {status_msg}")
                 return True
             else:
-                logger.warning(f"用户 {self.user_data['userName']} 报名响应: {status_msg}")
+                if status_msg not in self._logged_errors:
+                    self._logged_errors.add(status_msg)
+                    logger.warning(f"用户 {self.user_data['userName']} 报名响应: {status_msg}")
                 return False
 
         except requests.exceptions.Timeout:
@@ -344,28 +362,47 @@ class ActivityBot:
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = []
 
-            logger.info("启动第一轮快速报名...")
+            logger.info("▶ 第一轮快速报名（5 线程并发）")
             futures.extend(
                 [executor.submit(self._signup_worker, activity_id) for _ in range(5)]
             )
+            for f in futures:
+                try:
+                    f.result(timeout=2)
+                except Exception:
+                    pass
+            if self.signup_flags.get(activity_id):
+                logger.success(f"用户 {self.user_data['userName']} 第一轮报名成功！")
+                return
+            logger.info("第一轮完成，未成功，进入第二轮...")
 
-            logger.info("启动第二轮密集报名...")
+            logger.info("▶ 第二轮密集报名（15 线程，间隔 0.4s）")
+            r2 = []
             for _ in range(15):
                 if self.signup_flags.get(activity_id) or self._abort:
                     break
-                futures.append(executor.submit(self._signup_worker, activity_id))
+                r2.append(executor.submit(self._signup_worker, activity_id))
                 time.sleep(0.4)
+            for f in r2:
+                try:
+                    f.result(timeout=2)
+                except Exception:
+                    pass
+            if self.signup_flags.get(activity_id):
+                logger.success(f"用户 {self.user_data['userName']} 第二轮报名成功！")
+                return
+            logger.info("第二轮完成，未成功，进入第三轮...")
 
-            logger.info("启动第三轮持续报名...")
+            logger.info("▶ 第三轮持续报名（45 线程，间隔 0.8s）")
+            r3 = []
             for _ in range(45):
                 if self.signup_flags.get(activity_id) or self._abort:
                     break
-                futures.append(executor.submit(self._signup_worker, activity_id))
+                r3.append(executor.submit(self._signup_worker, activity_id))
                 time.sleep(0.8)
-
-            for future in futures:
+            for f in r3:
                 try:
-                    future.result(timeout=2)
+                    f.result(timeout=2)
                 except Exception:
                     pass
 
@@ -377,7 +414,7 @@ class ActivityBot:
                     self._callback("success", f"活动 {activity_id} 报名成功")
             else:
                 logger.error(
-                    f"用户 {self.user_data['userName']} 活动 {activity_id} 报名失败"
+                    f"用户 {self.user_data['userName']} 活动 {activity_id} 三轮报名均失败"
                 )
                 if self._callback:
                     self._callback("fail", f"活动 {activity_id} 报名失败")
