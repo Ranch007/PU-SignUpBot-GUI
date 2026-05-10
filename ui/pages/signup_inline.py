@@ -25,6 +25,9 @@ class SignupInline(ctk.CTkFrame):
 
         ctk.CTkLabel(bar, text="报名监控", font=(ctk.CTkFont, FONT_LG, "bold")).pack(side="left")
 
+        self._close_btn = ctk.CTkButton(bar, text="✕ 关闭", fg_color="gray", width=70, height=32, font=(ctk.CTkFont, FONT_SM), command=self._close)
+        self._close_btn.pack(side="right", padx=(PAD_SM, 0))
+
         self._abort_btn = ctk.CTkButton(bar, text="⏹ 中止", fg_color="#c0392b", hover_color="#a93226", height=32, font=(ctk.CTkFont, FONT_SM), state="disabled", command=self._abort)
         self._abort_btn.pack(side="right", padx=(0, PAD_SM))
 
@@ -49,24 +52,39 @@ class SignupInline(ctk.CTkFrame):
         # 表头
         hdr = ctk.CTkFrame(self._table, fg_color="transparent")
         hdr.pack(fill="x", padx=PAD_MD, pady=(PAD_MD, PAD_SM))
-        for txt, w in [("用户", 140), ("活动ID", 100), ("状态", 120), ("时间", 100)]:
+        for txt, w in [("用户", 100), ("活动名称", 140), ("活动ID", 90), ("状态", 100), ("时间", 80)]:
             ctk.CTkLabel(hdr, text=txt, font=(ctk.CTkFont, FONT_SM, "bold"), width=w).pack(side="left", padx=PAD_SM)
 
     # ======================== 报名逻辑 ========================
 
     def _start(self):
         self._start_btn.configure(state="disabled")
+        self._close_btn.configure(state="disabled")
         self._abort_btn.configure(state="normal")
         self._clear_table()
 
+        # 预加载活动名称
+        from core.tools import get_info
+        activity_names: Dict[str, str] = {}
+        for user in self.user_manager.user_datas:
+            token = user.get("token", "")
+            sid = str(user.get("sid", ""))
+            for aid in user.get("activity_ids", []):
+                if aid not in activity_names and token:
+                    info = get_info(str(aid), token, sid)
+                    name = info.get("name", aid) if info else aid
+                    activity_names[str(aid)] = name
+
         for user in self.user_manager.user_datas:
             for aid in user.get("activity_ids", []):
-                self._add_row(user["userName"], str(aid))
+                name = activity_names.get(str(aid), str(aid))
+                self._add_row(user["userName"], name, str(aid))
 
         if not self._status_rows:
             self.log_queue.put(("WARNING", "没有待报名的活动"))
             self._start_btn.configure(state="normal")
             self._abort_btn.configure(state="disabled")
+            self._close_btn.configure(state="normal")
             return
 
         self._running = True
@@ -92,20 +110,26 @@ class SignupInline(ctk.CTkFrame):
 
         threading.Thread(target=_run, daemon=True).start()
 
+    def _close(self):
+        if self._running:
+            self._abort()
+        self._on_close()
+
     def _abort(self):
         self._running = False
         self._abort_btn.configure(state="disabled")
         self.log_queue.put(("WARNING", "用户请求中止所有报名任务"))
 
-    def _add_row(self, username: str, activity_id: str):
+    def _add_row(self, username: str, activity_name: str, activity_id: str):
         row = ctk.CTkFrame(self._table, corner_radius=6)
         row.pack(fill="x", padx=PAD_MD, pady=2)
 
         items = [
-            ctk.CTkLabel(row, text=username, font=(ctk.CTkFont, FONT_SM), width=140),
-            ctk.CTkLabel(row, text=activity_id, font=(ctk.CTkFont, FONT_SM), width=100),
-            ctk.CTkLabel(row, text="⏳ 等待", font=(ctk.CTkFont, FONT_SM), width=120),
-            ctk.CTkLabel(row, text="", font=(ctk.CTkFont, FONT_SM), width=100),
+            ctk.CTkLabel(row, text=username, font=(ctk.CTkFont, FONT_SM), width=100),
+            ctk.CTkLabel(row, text=activity_name, font=(ctk.CTkFont, FONT_SM), width=140),
+            ctk.CTkLabel(row, text=activity_id, font=(ctk.CTkFont, FONT_SM), width=90),
+            ctk.CTkLabel(row, text="⏳ 等待", font=(ctk.CTkFont, FONT_SM), width=100),
+            ctk.CTkLabel(row, text="", font=(ctk.CTkFont, FONT_SM), width=80),
         ]
         for item in items:
             item.pack(side="left", padx=PAD_SM)
@@ -115,7 +139,7 @@ class SignupInline(ctk.CTkFrame):
     def _update(self, username: str, activity_id: str, status: str, icon: str):
         for r in self._status_rows:
             if r["user"] == username and r["aid"] == activity_id:
-                r["labels"][2].configure(text=f"{icon} {status}")
+                r["labels"][3].configure(text=f"{icon} {status}")
                 break
         self._refresh_progress()
 
@@ -123,8 +147,8 @@ class SignupInline(ctk.CTkFrame):
         total = len(self._status_rows)
         if total == 0:
             return
-        success = sum(1 for r in self._status_rows if "成功" in r["labels"][2].cget("text"))
-        failed = sum(1 for r in self._status_rows if "失败" in r["labels"][2].cget("text"))
+        success = sum(1 for r in self._status_rows if "成功" in r["labels"][3].cget("text"))
+        failed = sum(1 for r in self._status_rows if "失败" in r["labels"][3].cget("text"))
         done = success + failed
         self._progress.set(done / total)
         self._prog_label.configure(text=f"总计: {total}  |  成功: {success}  |  失败: {failed}  |  等待: {total - done}")
@@ -133,6 +157,7 @@ class SignupInline(ctk.CTkFrame):
         self._running = False
         self._start_btn.configure(state="normal")
         self._abort_btn.configure(state="disabled")
+        self._close_btn.configure(state="normal")
         self.log_queue.put(("SUCCESS", "所有报名任务已完成"))
 
     def _clear_table(self):
