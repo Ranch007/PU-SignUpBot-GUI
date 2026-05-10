@@ -72,16 +72,12 @@ class DashboardPage(ctk.CTkFrame):
             circle = _make_circle(path, 40)
             img = ctk.CTkImage(circle, size=(40, 40))
 
-            btn = ctk.CTkButton(
-                avatars, text="", image=img, width=40, height=40,
-                corner_radius=20, fg_color="transparent",
-                hover_color=(LIGHT_BORDER, DARK_BORDER),
-                border_width=0, border_spacing=0,
-                command=lambda u=url: webbrowser.open(u),
-            )
-            btn.pack(side="left", padx=0)
-            btn.bind("<Enter>", lambda e, n=username: self._show_tooltip(e, n))
-            btn.bind("<Leave>", lambda e: self._hide_tooltip())
+            lbl = ctk.CTkLabel(avatars, text="", image=img, width=40, height=40,
+                               fg_color="transparent", cursor="hand2")
+            lbl.pack(side="left", padx=1)
+            lbl.bind("<Button-1>", lambda e, u=url: webbrowser.open(u))
+            lbl.bind("<Enter>", lambda e, n=username: self._show_tooltip(e, n))
+            lbl.bind("<Leave>", lambda e: self._hide_tooltip())
 
         btn_frame = ctk.CTkFrame(header, fg_color="transparent")
         btn_frame.pack(side="right")
