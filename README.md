@@ -2,7 +2,7 @@
 
 PU 口袋校园活动自动报名助手 —— 带图形界面的桌面应用，双击即用。
 
-![image-UI](./README.assets/image-20260511002622008.png)
+![image-UI](./README.assets/Snipaste_2026-05-11_00-32-44.jpeg)
 
 ## 缘起
 
