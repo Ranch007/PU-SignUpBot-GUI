@@ -1,7 +1,7 @@
 """用户信息卡片组件"""
 from typing import Callable, Dict
 import customtkinter as ctk
-from ui.styles import FONT_SM, FONT_MD, PAD_MD, RADIUS
+from ui.styles import FONT_SM, FONT_MD, PAD_MD, RADIUS, LIGHT_BORDER, DARK_BORDER, LIGHT_FRAME, DARK_FRAME
 
 
 class UserCard(ctk.CTkFrame):
@@ -13,7 +13,14 @@ class UserCard(ctk.CTkFrame):
         on_select_activity: Callable,
         **kwargs,
     ):
-        super().__init__(parent, corner_radius=RADIUS, **kwargs)
+        super().__init__(
+            parent,
+            corner_radius=RADIUS,
+            fg_color=(LIGHT_FRAME, DARK_FRAME),
+            border_width=1,
+            border_color=(LIGHT_BORDER, DARK_BORDER),
+            **kwargs,
+        )
 
         self.user = user
 

@@ -3,13 +3,13 @@ from typing import Dict, List, Callable
 import threading
 import customtkinter as ctk
 
-from ui.styles import FONT_LG, FONT_MD, FONT_SM, PAD_LG, PAD_MD, PAD_SM, PAD_XS, RADIUS
+from ui.styles import FONT_LG, FONT_MD, FONT_SM, PAD_LG, PAD_MD, PAD_SM, PAD_XS, RADIUS, LIGHT_FRAME, DARK_FRAME
 from core.tools import get_activity_type, get_allowed_activity_list
 
 
 class ActivitySelectInline(ctk.CTkFrame):
     def __init__(self, parent, username: str, user_manager, on_close: Callable, **kw):
-        super().__init__(parent, corner_radius=RADIUS, **kw)
+        super().__init__(parent, corner_radius=RADIUS, fg_color=(LIGHT_FRAME, DARK_FRAME), **kw)
         self.user_manager = user_manager
         self._username = username
         self._on_close = on_close

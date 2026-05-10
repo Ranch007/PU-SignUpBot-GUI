@@ -9,16 +9,18 @@ ERROR = "#c0392b"
 WARNING = "#e67e22"
 INFO = "#7f8c8d"
 
-# 亮色主题
-LIGHT_BG = "#ebebeb"
-LIGHT_FG = "#1a1a1a"
-LIGHT_FRAME = "#ffffff"
+# 亮色主题（暖灰米色系，柔和护眼）
+LIGHT_BG = "#e8e5df"
+LIGHT_FG = "#2e2e2e"
+LIGHT_FRAME = "#f4f2ed"
+LIGHT_BORDER = "#d6d3cc"
 LIGHT_NAV = "#1a1a2e"
 
 # 暗色主题
 DARK_BG = "#1a1a1a"
 DARK_FG = "#ebebeb"
 DARK_FRAME = "#242424"
+DARK_BORDER = "#3a3a3a"
 DARK_NAV = "#0d0d1a"
 
 # 日志颜色

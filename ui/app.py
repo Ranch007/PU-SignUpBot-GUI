@@ -17,6 +17,7 @@ class App(ctk.CTk):
         self.title("PU-SignUpBot   PU口袋校园报名助手")
         self.minsize(960, 640)
         self.geometry("1100x740")
+        self.configure(fg_color=(LIGHT_BG, DARK_BG))
 
         icon_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "PU.ico")
         if os.path.exists(icon_path):

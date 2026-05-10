@@ -1,12 +1,40 @@
 """Dashboard 单页：用户卡片 + 内联表单区 + 日志"""
+import os
+import webbrowser
+import tkinter as tk
+import darkdetect
 import customtkinter as ctk
+from PIL import Image, ImageDraw
 
 from ui.styles import (
     FONT_XL, FONT_LG, FONT_MD, FONT_SM,
     PAD_LG, PAD_MD, PAD_SM, RADIUS,
+    LIGHT_BORDER, DARK_BORDER,
 )
 from ui.widgets.user_card import UserCard
 from ui.widgets.log_widget import LogWidget
+
+_IMG_DIR = os.path.dirname(os.path.abspath(__file__))
+_SUN_PATH = os.path.join(_IMG_DIR, "sun.png")
+_MOON_PATH = os.path.join(_IMG_DIR, "moon.png")
+_CONTRIB_DIR = os.path.join(_IMG_DIR, "contributors")
+
+def _make_circle(path: str, size: int) -> Image.Image:
+    img = Image.open(path).convert("RGBA")
+    img = img.resize((size, size), Image.LANCZOS)
+    mask = Image.new("L", (size, size), 0)
+    ImageDraw.Draw(mask).ellipse((0, 0, size, size), fill=255)
+    img.putalpha(mask)
+    return img
+
+_CONTRIBUTORS = [
+    ("_RedForest.png",   "RedForestLonvor", "https://github.com/RedForestLonvor"),
+    ("yifeng.jpg",       "yiqjffeng",       "https://github.com/yiqjffeng"),
+    ("DGYJ.jpg",         "DGYJ-fufu",       "https://github.com/DGYJ-fufu"),
+    ("ZhangLei_.jpg",    "later-we",        "https://github.com/later-we"),
+    ("Mhenwa.jpg",       "Mhenwa",          "https://github.com/Mhenwa"),
+    ("Ranch007.jpg",     "Ranch007",        "https://github.com/Ranch007"),
+]
 
 
 class DashboardPage(ctk.CTkFrame):
@@ -16,6 +44,11 @@ class DashboardPage(ctk.CTkFrame):
         self.log_queue = log_queue
         self.cards = []
         self._inline = None  # 当前内联表单
+        self._dark_mode = darkdetect.isDark()
+        self._tooltip = None
+
+        self._sun_img = ctk.CTkImage(Image.open(_SUN_PATH), size=(24, 24))
+        self._moon_img = ctk.CTkImage(Image.open(_MOON_PATH), size=(24, 24))
 
         self._build_header()
         self._build_main()
@@ -29,11 +62,26 @@ class DashboardPage(ctk.CTkFrame):
         header = ctk.CTkFrame(self, fg_color="transparent")
         header.pack(fill="x", padx=PAD_LG, pady=(PAD_LG, PAD_MD))
 
-        title_col = ctk.CTkFrame(header, fg_color="transparent")
-        title_col.pack(side="left")
+        avatars = ctk.CTkFrame(header, fg_color="transparent")
+        avatars.pack(side="left")
 
-        ctk.CTkLabel(title_col, text="PU-SignUpBot", font=(ctk.CTkFont, FONT_XL, "bold")).pack(anchor="w")
-        ctk.CTkLabel(title_col, text="PU 口袋校园报名助手", font=(ctk.CTkFont, FONT_SM), text_color="gray").pack(anchor="w")
+        ctk.CTkLabel(avatars, text="贡\n献\n者", font=("KaiTi", 14, "bold"), text_color="gray", width=18).pack(side="left", padx=(0, 6))
+
+        for filename, username, url in _CONTRIBUTORS:
+            path = os.path.join(_CONTRIB_DIR, filename)
+            circle = _make_circle(path, 40)
+            img = ctk.CTkImage(circle, size=(40, 40))
+
+            btn = ctk.CTkButton(
+                avatars, text="", image=img, width=40, height=40,
+                corner_radius=20, fg_color="transparent",
+                hover_color=(LIGHT_BORDER, DARK_BORDER),
+                border_width=0, border_spacing=0,
+                command=lambda u=url: webbrowser.open(u),
+            )
+            btn.pack(side="left", padx=0)
+            btn.bind("<Enter>", lambda e, n=username: self._show_tooltip(e, n))
+            btn.bind("<Leave>", lambda e: self._hide_tooltip())
 
         btn_frame = ctk.CTkFrame(header, fg_color="transparent")
         btn_frame.pack(side="right")
@@ -44,18 +92,26 @@ class DashboardPage(ctk.CTkFrame):
         self.signup_btn = ctk.CTkButton(btn_frame, text="▶ 全部报名", fg_color="#2e8b57", hover_color="#1e6b3a", height=36, font=(ctk.CTkFont, FONT_MD), command=self._show_signup)
         self.signup_btn.pack(side="left", padx=(0, PAD_SM))
 
-        self._dark_mode = False
-        self.theme_btn = ctk.CTkButton(btn_frame, text="🌙", width=40, height=36, fg_color="transparent", hover_color=("gray80", "gray30"), font=(ctk.CTkFont, FONT_LG), command=self._toggle_theme)
+        self.theme_btn = ctk.CTkButton(btn_frame, text="", image=self._sun_img if self._dark_mode else self._moon_img, width=40, height=36, fg_color="transparent", hover_color=("gray80", "gray30"), command=self._toggle_theme)
         self.theme_btn.pack(side="left")
+
+        sep = ctk.CTkFrame(self, height=1, fg_color=(LIGHT_BORDER, DARK_BORDER))
+        sep.pack(fill="x", padx=PAD_LG)
 
     # ======================== 主体 ========================
 
     def _build_main(self):
         self.main_area = ctk.CTkFrame(self, fg_color="transparent")
-        self.main_area.pack(fill="both", expand=True, padx=PAD_LG)
+        self.main_area.pack(fill="both", expand=True, padx=PAD_LG, pady=(PAD_MD, 0))
 
         # 用户卡片区
-        self.cards_frame = ctk.CTkScrollableFrame(self.main_area, fg_color="transparent", corner_radius=RADIUS)
+        self.cards_frame = ctk.CTkScrollableFrame(
+            self.main_area,
+            fg_color="transparent",
+            corner_radius=RADIUS,
+            border_width=1,
+            border_color=(LIGHT_BORDER, DARK_BORDER),
+        )
         self.cards_frame.pack(fill="both", expand=True)
         for i in range(3):
             self.cards_frame.grid_columnconfigure(i, weight=1)
@@ -66,6 +122,9 @@ class DashboardPage(ctk.CTkFrame):
     # ======================== 日志区 ========================
 
     def _build_log(self):
+        sep = ctk.CTkFrame(self, height=1, fg_color=(LIGHT_BORDER, DARK_BORDER))
+        sep.pack(fill="x", padx=PAD_LG)
+
         log_section = ctk.CTkFrame(self, fg_color="transparent")
         log_section.pack(fill="x", padx=PAD_LG, pady=(PAD_MD, 0))
 
@@ -162,12 +221,32 @@ class DashboardPage(ctk.CTkFrame):
         )
         self._show_inline(w)
 
+    # ======================== 工具提示 ========================
+
+    def _show_tooltip(self, event, name: str):
+        if self._tooltip:
+            self._tooltip.destroy()
+        self._tooltip = tk.Toplevel(self.winfo_toplevel())
+        self._tooltip.wm_overrideredirect(True)
+        x = event.widget.winfo_rootx() + event.widget.winfo_width() // 2
+        y = event.widget.winfo_rooty() + event.widget.winfo_height() + 4
+        self._tooltip.wm_geometry(f"+{x - 30}+{y}")
+        frame = tk.Frame(self._tooltip, bg="#333333", padx=6, pady=2)
+        frame.pack()
+        tk.Label(frame, text=name, fg="#ffffff", bg="#333333", font=("Microsoft YaHei", 10)).pack()
+
+    def _hide_tooltip(self):
+        if self._tooltip:
+            self._tooltip.destroy()
+            self._tooltip = None
+
     # ======================== 回调 ========================
 
     def _toggle_theme(self):
         self._dark_mode = not self._dark_mode
-        ctk.set_appearance_mode("dark" if self._dark_mode else "light")
-        self.theme_btn.configure(text="☀" if self._dark_mode else "🌙")
+        new_mode = "dark" if self._dark_mode else "light"
+        self.theme_btn.configure(image=self._sun_img if self._dark_mode else self._moon_img)
+        self.after(1, lambda: ctk.set_appearance_mode(new_mode))
 
     def _on_delete(self, username: str):
         self.user_manager.remove_user(username)

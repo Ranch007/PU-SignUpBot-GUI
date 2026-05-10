@@ -2,13 +2,13 @@
 import customtkinter as ctk
 from typing import Callable
 
-from ui.styles import FONT_LG, FONT_MD, FONT_SM, PAD_LG, PAD_MD, PAD_SM, RADIUS
+from ui.styles import FONT_LG, FONT_MD, FONT_SM, PAD_LG, PAD_MD, PAD_SM, RADIUS, LIGHT_FRAME, DARK_FRAME
 from core.tools import get_sid, get_token
 
 
 class AddUserInline(ctk.CTkFrame):
     def __init__(self, parent, user_manager, on_done: Callable, on_cancel: Callable, **kw):
-        super().__init__(parent, corner_radius=RADIUS, **kw)
+        super().__init__(parent, corner_radius=RADIUS, fg_color=(LIGHT_FRAME, DARK_FRAME), **kw)
         self.user_manager = user_manager
         self._on_done = on_done
         self._on_cancel = on_cancel

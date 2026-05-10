@@ -3,13 +3,13 @@ from typing import Dict, List, Callable
 import threading
 import customtkinter as ctk
 
-from ui.styles import FONT_LG, FONT_MD, FONT_SM, PAD_LG, PAD_MD, PAD_SM, RADIUS
+from ui.styles import FONT_LG, FONT_MD, FONT_SM, PAD_LG, PAD_MD, PAD_SM, RADIUS, LIGHT_FRAME, DARK_FRAME
 from core.single import single_account
 
 
 class SignupInline(ctk.CTkFrame):
     def __init__(self, parent, user_manager, log_queue, on_close: Callable, **kw):
-        super().__init__(parent, corner_radius=RADIUS, **kw)
+        super().__init__(parent, corner_radius=RADIUS, fg_color=(LIGHT_FRAME, DARK_FRAME), **kw)
         self.user_manager = user_manager
         self.log_queue = log_queue
         self._on_close = on_close
