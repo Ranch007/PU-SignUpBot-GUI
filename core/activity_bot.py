@@ -247,7 +247,7 @@ class ActivityBot:
             return True
 
         try:
-            data = {"activityId": activity_id}
+            data = {"activityId": int(activity_id)}
             headers = self._get_headers()
             echo = generate_random_echo()
             timestamp = current_timestamp_str()
@@ -278,7 +278,7 @@ class ActivityBot:
                             self._callback("success", f"活动 {activity_id} {status_msg}")
                 return True
             else:
-                logger.debug(f"用户 {self.user_data['userName']} 报名响应: {status_msg}")
+                logger.warning(f"用户 {self.user_data['userName']} 报名响应: {status_msg}")
                 return False
 
         except requests.exceptions.Timeout:
