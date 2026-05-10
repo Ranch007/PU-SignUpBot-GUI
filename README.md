@@ -37,6 +37,14 @@ PU 口袋校园活动自动报名助手 —— 带图形界面的桌面应用，
 
 ## 快速开始
 
+### 1. Releases 下载最新zip文件
+从 [Releases](https://github.com/Ranch007/PU-SignUpBot-GUI/releases) 下载最新版 PU-SignUpBot-GUI v0.2.0 — 图形界面桌面应用
+
+### 2. 解压双击
+下载 PU-SignUpBot-GUI-v0.x.0.zip，解压后双击 PU-SignUpBot-GUI.exe 即可运行。
+
+## 源码开始
+
 ### 1. 安装 Python 3.11+
 
 从 [python.org](https://www.python.org/downloads/) 下载安装，安装时勾选 **"Add Python to PATH"**。
