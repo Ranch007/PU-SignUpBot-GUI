@@ -2,6 +2,8 @@
 
 PU 口袋校园活动自动报名助手 —— 带图形界面的桌面应用，双击即用。
 
+![image-UI](./README.assets/image-20260511002622008.png)
+
 ## 缘起
 
 本项目受 [_RedForest](https://github.com/RedForestLonvor) 开发的 [PU-SignUpBot](https://github.com/RedForestLonvor/PU-SignUpBot) 启发。原项目功能完善，但为命令行（CLI）版本，非计算机专业的同学操作门槛较高——需要手动敲命令、编辑 JSON 配置文件，稍有不慎就容易出错。
