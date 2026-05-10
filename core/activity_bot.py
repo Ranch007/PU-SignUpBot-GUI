@@ -34,7 +34,7 @@ class ActivityBot:
         max_retries = 3
         headers = HEADERS_ACTIVITY.copy()
         headers["Authorization"] = f"Bearer {self.cur_token}:{self.user_data.get('sid')}"
-        payload = {"id": activity_id}
+        payload = {"id": int(activity_id)}
 
         for attempt in range(max_retries):
             try:
@@ -111,7 +111,7 @@ class ActivityBot:
         for retry in range(3):
             try:
                 headers = self._get_headers()
-                payload = {"id": activity_id}
+                payload = {"id": int(activity_id)}
 
                 response = requests.post(
                     self.info_url, headers=headers, json=payload, timeout=8
@@ -138,6 +138,11 @@ class ActivityBot:
                         f"用户 {self.user_data['userName']} 活动 {activity_id} 开始时间: {start_time}"
                     )
                     return start_time
+                else:
+                    logger.warning(
+                        f"用户 {self.user_data['userName']} 活动 {activity_id} "
+                        f"API 响应缺少 joinStartTime 字段, data={data.get('data')}"
+                    )
 
             except Exception as e:
                 logger.warning(
