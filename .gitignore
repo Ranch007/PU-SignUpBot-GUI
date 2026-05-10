@@ -10,3 +10,8 @@ __pycache__
 
 # 用户隐私数据
 user_data.json
+
+# PyInstaller 构建产物
+build/
+dist/
+*.spec
