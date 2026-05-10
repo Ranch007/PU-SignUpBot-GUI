@@ -37,7 +37,7 @@ PU 口袋校园活动自动报名助手 —— 带图形界面的桌面应用，
 
 ## 快速开始
 
-### 1. Releases 下载最新zip文件
+### 1. 下载最新zip文件
 从 [Releases](https://github.com/Ranch007/PU-SignUpBot-GUI/releases) 下载最新版 PU-SignUpBot-GUI v0.2.0 — 图形界面桌面应用
 
 ### 2. 解压双击
