@@ -1,6 +1,6 @@
 [project]
 name = "pu-signupbot"
-version = "0.2.0"
+version = "0.2.1"
 description = "PU 口袋校园报名助手 GUI"
 requires-python = ">=3.11"
 dependencies = [
