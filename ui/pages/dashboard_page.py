@@ -1,5 +1,6 @@
 """Dashboard 单页：用户卡片 + 内联表单区 + 日志"""
 import os
+import threading
 import webbrowser
 import tkinter as tk
 import darkdetect
@@ -98,7 +99,7 @@ class DashboardPage(ctk.CTkFrame):
 
     def _build_main(self):
         self.main_area = ctk.CTkFrame(self, fg_color="transparent")
-        self.main_area.pack(fill="both", expand=True, padx=PAD_LG, pady=(PAD_MD, 0))
+        self.main_area.pack(fill="both", expand=True, padx=PAD_LG, pady=(PAD_MD, PAD_SM))
 
         # 用户卡片区
         self.cards_frame = ctk.CTkScrollableFrame(
@@ -109,7 +110,7 @@ class DashboardPage(ctk.CTkFrame):
             border_color=(LIGHT_BORDER, DARK_BORDER),
         )
         self.cards_frame.pack(fill="both", expand=True)
-        for i in range(3):
+        for i in range(2):
             self.cards_frame.grid_columnconfigure(i, weight=1)
 
         # 内联表单区（初始隐藏，动态 pack/unpack）
@@ -119,14 +120,14 @@ class DashboardPage(ctk.CTkFrame):
 
     def _build_log(self):
         sep = ctk.CTkFrame(self, height=1, fg_color=(LIGHT_BORDER, DARK_BORDER))
-        sep.pack(fill="x", padx=PAD_LG)
+        sep.pack(fill="x", padx=PAD_LG, pady=(0, PAD_SM))
 
         log_section = ctk.CTkFrame(self, fg_color="transparent")
-        log_section.pack(fill="x", padx=PAD_LG, pady=(PAD_MD, 0))
+        log_section.pack(fill="x", padx=PAD_LG)
 
         ctk.CTkLabel(log_section, text="实时日志", font=(ctk.CTkFont, FONT_LG, "bold")).pack(anchor="w")
 
-        self.log_widget = LogWidget(log_section, log_queue=self.log_queue, height=120)
+        self.log_widget = LogWidget(log_section, log_queue=self.log_queue, height=140)
         self.log_widget.pack(fill="x", pady=(PAD_SM, 0))
 
     # ======================== 状态栏 ========================
@@ -155,14 +156,43 @@ class DashboardPage(ctk.CTkFrame):
                 self.cards_frame, user,
                 on_delete=self._on_delete,
                 on_select_activity=self._on_select_activity,
-                width=280, height=150,
+                on_clear_activities=self._on_clear_activities,
             )
-            row, col = divmod(i, 3)
+            row, col = divmod(i, 2)
             card.grid(row=row, column=col, padx=PAD_MD, pady=PAD_MD, sticky="nsew")
             self.cards.append(card)
+            card.load_activities()
 
-        self.status_label.configure(text=f"用户: {len(users)}/6  |  活动: {total}")
+        # 行和列都设置权重，均匀分配空间
+        num_rows = max(1, (len(users) + 1) // 2)
+        for r in range(num_rows):
+            self.cards_frame.grid_rowconfigure(r, weight=1)
+
+        self.status_label.configure(text=f"用户: {len(users)}/2  |  活动: {total}")
         self.signup_btn.configure(state="normal" if users else "disabled")
+
+        if users:
+            self._fetch_credits(users)
+
+    def _fetch_credits(self, users):
+        from core.tools import get_user_credit
+
+        def _run():
+            for i, user in enumerate(users):
+                token = user.get("token")
+                sid = user.get("sid")
+                if not token or not sid:
+                    continue
+                info = get_user_credit(token, sid)
+                credit = info.get("credit")
+                if credit is not None:
+                    self.after(0, lambda idx=i, c=float(credit): self._update_card_credit(idx, c))
+
+        threading.Thread(target=_run, daemon=True).start()
+
+    def _update_card_credit(self, index: int, credit: float):
+        if index < len(self.cards):
+            self.cards[index].set_credit(credit)
 
     # ======================== 内联表单管理 ========================
 
@@ -182,7 +212,7 @@ class DashboardPage(ctk.CTkFrame):
         self.cards_frame.pack(fill="both", expand=True, pady=(0, PAD_MD))
 
     def _show_add_user(self):
-        if len(self.user_manager.user_datas) >= 6:
+        if len(self.user_manager.user_datas) >= 2:
             self._show_notification("用户添加数量已达上限，请删除后再添加！")
             return
         for child in self.inline_frame.winfo_children():
@@ -246,6 +276,11 @@ class DashboardPage(ctk.CTkFrame):
 
     def _on_delete(self, username: str):
         self.user_manager.remove_user(username)
+        self.user_manager.write_user_data()
+        self.refresh()
+
+    def _on_clear_activities(self, username: str):
+        self.user_manager.update_user(username, {"activity_ids": []})
         self.user_manager.write_user_data()
         self.refresh()
 

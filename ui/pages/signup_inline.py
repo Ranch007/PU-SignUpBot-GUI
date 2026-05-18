@@ -46,14 +46,16 @@ class SignupInline(ctk.CTkFrame):
         self._prog_label.pack(anchor="w", padx=PAD_MD, pady=(0, PAD_MD))
 
         # 状态表格
-        self._table = ctk.CTkScrollableFrame(self, height=140, corner_radius=RADIUS)
-        self._table.pack(fill="x", padx=PAD_LG, pady=(0, PAD_MD))
+        self._table = ctk.CTkScrollableFrame(self, corner_radius=RADIUS)
+        self._table.pack(fill="both", expand=True, padx=PAD_LG, pady=(0, PAD_MD))
 
         # 表头
         hdr = ctk.CTkFrame(self._table, fg_color="transparent")
         hdr.pack(fill="x", padx=PAD_MD, pady=(PAD_MD, PAD_SM))
-        for txt, w in [("用户", 100), ("活动名称", 140), ("活动ID", 90), ("状态", 100), ("时间", 80)]:
-            ctk.CTkLabel(hdr, text=txt, font=(ctk.CTkFont, FONT_SM, "bold"), width=w).pack(side="left", padx=PAD_SM)
+        for txt, w in [("用户", 100), ("活动名称", None), ("活动ID", 90), ("状态", 100), ("时间", 80)]:
+            kw = {"width": w} if w else {}
+            lbl = ctk.CTkLabel(hdr, text=txt, font=(ctk.CTkFont, FONT_SM, "bold"), **kw)
+            lbl.pack(side="left", padx=PAD_SM, fill="x" if not w else "none", expand=not w)
 
     # ======================== 报名逻辑 ========================
 
@@ -126,13 +128,13 @@ class SignupInline(ctk.CTkFrame):
 
         items = [
             ctk.CTkLabel(row, text=username, font=(ctk.CTkFont, FONT_SM), width=100),
-            ctk.CTkLabel(row, text=activity_name, font=(ctk.CTkFont, FONT_SM), width=140),
+            ctk.CTkLabel(row, text=activity_name, font=(ctk.CTkFont, FONT_SM)),
             ctk.CTkLabel(row, text=activity_id, font=(ctk.CTkFont, FONT_SM), width=90),
             ctk.CTkLabel(row, text="⏳ 等待", font=(ctk.CTkFont, FONT_SM), width=100),
             ctk.CTkLabel(row, text="", font=(ctk.CTkFont, FONT_SM), width=80),
         ]
-        for item in items:
-            item.pack(side="left", padx=PAD_SM)
+        for i, item in enumerate(items):
+            item.pack(side="left", padx=PAD_SM, fill="x" if i == 1 else "none", expand=(i == 1))
 
         self._status_rows.append({"frame": row, "labels": items, "user": username, "aid": activity_id})
 

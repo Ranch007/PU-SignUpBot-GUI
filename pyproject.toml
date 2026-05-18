@@ -1,14 +1,15 @@
 [project]
 name = "pu-signupbot"
-version = "0.2.1"
+version = "0.3.0"
 description = "PU 口袋校园报名助手 GUI"
 requires-python = ">=3.11"
 dependencies = [
     "loguru>=0.7.3",
-    "requests>=2.32.5",
+    "requests>=2.33.0",
     "customtkinter>=5.2.2",
     "pycryptodome>=3.21.0",
     "pillow>=10.0.0",
+    "darkdetect>=0.8.0",
 ]
 
 [[tool.uv.index]]

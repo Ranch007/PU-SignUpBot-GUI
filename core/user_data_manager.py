@@ -58,8 +58,8 @@ class UserDataManager:
             json.dump(data_to_write, f, indent=4, ensure_ascii=False)
 
     def add_user(self, user: Dict) -> bool:
-        if len(self.user_datas) >= 6:
-            logger.warning("用户数已达上限（6个）")
+        if len(self.user_datas) >= 2:
+            logger.warning("用户数已达上限（2个）")
             return False
         user.pop("email", None)
         self.user_datas.append(user)

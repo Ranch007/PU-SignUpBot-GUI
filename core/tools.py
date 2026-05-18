@@ -190,6 +190,24 @@ def get_single_activity(activity_id: str, info: Dict) -> Dict:
     }
 
 
+def get_user_credit(token: str, sid: int) -> Dict:
+    """获取用户学分信息"""
+    info_url = "https://apis.pocketuni.net/apis/user/pc-info"
+    headers = HEADERS_ACTIVITY.copy()
+    headers["Authorization"] = f"Bearer {token}:{str(sid)}"
+    try:
+        response = _post_with_retry(
+            info_url, headers, {}, label="获取用户学分"
+        )
+        return response.json().get("data", {})
+    except requests.exceptions.HTTPError as e:
+        logger.error(f"获取学分失败，HTTP错误: {str(e)}")
+        return {}
+    except Exception as e:
+        logger.error(f"获取学分失败: {str(e)}")
+        return {}
+
+
 def get_allowed_activity_list(user: Dict) -> List:
     """获取满足用户筛选条件的活动列表"""
     logger.info("开始获取满足用户筛选条件的活动")

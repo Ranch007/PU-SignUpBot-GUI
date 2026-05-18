@@ -41,8 +41,8 @@ class ActivitySelectInline(ctk.CTkFrame):
         main = ctk.CTkFrame(self, fg_color="transparent")
         main.pack(fill="both", expand=True, padx=PAD_LG, pady=(0, PAD_LG))
 
-        self._filter_scroll = ctk.CTkScrollableFrame(main, width=250, corner_radius=RADIUS)
-        self._filter_scroll.pack(side="left", fill="y", padx=(0, PAD_MD))
+        self._filter_scroll = ctk.CTkScrollableFrame(main, corner_radius=RADIUS)
+        self._filter_scroll.pack(side="left", fill="both", expand=True, padx=(0, PAD_MD))
 
         right = ctk.CTkFrame(main, fg_color="transparent")
         right.pack(side="left", fill="both", expand=True)
