@@ -1,7 +1,7 @@
 # PU-SignUpBot-GUI
 
 PU 口袋校园活动自动报名助手 —— 带图形界面的桌面应用，双击即用。
-![image-Sign](./README.assets\Snipaste_2026-05-18_21-01-03.jpeg)
+![image-Sign](./README.assets/Snipaste_2026-05-18_21-01-03.jpeg)
 ![image-UI](./README.assets/Snipaste_2026-05-11_00-32-44.jpeg)
 
 ## 缘起
