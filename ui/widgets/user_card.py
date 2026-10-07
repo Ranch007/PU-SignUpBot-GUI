@@ -1,7 +1,9 @@
 """用户信息卡片组件"""
 import threading
+from queue import Empty, Queue
 from typing import Callable, Dict, List
 import customtkinter as ctk
+from core.activity_plan import parse_activity_time
 from ui.styles import FONT_SM, FONT_MD, PAD_MD, PAD_SM, RADIUS, LIGHT_BORDER, DARK_BORDER, LIGHT_FRAME, DARK_FRAME
 
 
@@ -13,6 +15,7 @@ class UserCard(ctk.CTkFrame):
         on_delete: Callable,
         on_select_activity: Callable,
         on_clear_activities: Callable,
+        on_relogin: Callable,
         credit: float | None = None,
         **kwargs,
     ):
@@ -27,27 +30,37 @@ class UserCard(ctk.CTkFrame):
 
         self.user = user
         self._activity_rows = []
+        self._activity_row_widgets = []  # [(名称, 学分, 时间)] 三元组，供宽窄布局重排
+        self._wide_layout = None
+        self._detail_results = Queue()
+        self._detail_generation = 0
+        self._detail_poll_id = self.after(100, self._poll_details)
 
-        # 两列布局：左右比例 1:2
-        self.grid_columnconfigure(0, weight=1)
-        self.grid_columnconfigure(1, weight=2)
-        self.grid_rowconfigure(0, weight=1)
+        # 卡片占一整行：账号信息按内容宽度，活动列表吸收全部剩余空间。
+        self.grid_columnconfigure(1, weight=1)
 
         # ========== 左板块 ==========
         left = ctk.CTkFrame(self, fg_color="transparent")
         left.grid(row=0, column=0, sticky="nsw", padx=(PAD_MD, PAD_SM), pady=PAD_MD)
 
         # 第一行：用户名
+        user_name = user.get("userName", "未知")
+        realname = user.get("realname")
         ctk.CTkLabel(
             left,
-            text=user.get("userName", "未知"),
+            text=f"{user_name} · {realname}" if realname else user_name,
             font=(ctk.CTkFont, FONT_MD, "bold"),
+            height=26,
         ).pack(anchor="w", pady=(0, PAD_SM))
 
-        # 第二行：学院
-        college = user.get("college", "未知学院")
+        # 第二行：学校 · 学院 · 年级（缺哪段就显示哪段）
+        parts = [user.get("school"), user.get("college", "未知学院")]
+        if user.get("year"):
+            parts.append(f"{user['year']}级")
+        school_line = " · ".join(str(p) for p in parts if p) or "未知学院"
         ctk.CTkLabel(
-            left, text=college, font=(ctk.CTkFont, FONT_MD,"bold"), text_color="gray"
+            left, text=school_line, font=(ctk.CTkFont, FONT_SM),
+            text_color=("#55514d", "#c1c1c1")
         ).pack(anchor="w")
 
         # 第三行：学分
@@ -55,7 +68,8 @@ class UserCard(ctk.CTkFrame):
         credit_row.pack(fill="x", pady=(0, PAD_SM))
 
         ctk.CTkLabel(
-            credit_row, text="学分: ", font=(ctk.CTkFont, FONT_MD, "bold"), text_color="gray"
+            credit_row, text="学分: ", font=(ctk.CTkFont, FONT_MD, "bold"),
+            text_color=("#55514d", "#c1c1c1")
         ).pack(side="left")
         credit_value = f"{credit:.1f}" if credit is not None else "--"
         self.credit_label = ctk.CTkLabel(
@@ -67,8 +81,9 @@ class UserCard(ctk.CTkFrame):
         # 第三行：Token 状态（带圆点）
         has_token = bool(user.get("token"))
         dot = "●" if has_token else "●"
-        token_text = "Token 有效" if has_token else "Token 无效"
-        token_color = "#2ecc71" if has_token else "#e74c3c"
+        token_text = (user.get("credential_error") or
+                      ("登录待验证" if has_token else "未登录"))
+        token_color = ("#55514d", "#c1c1c1") if has_token and not user.get("credential_error") else ("#a72727", "#ff8989")
         self.token_label = ctk.CTkLabel(
             left,
             text=f"{dot} {token_text}",
@@ -86,8 +101,8 @@ class UserCard(ctk.CTkFrame):
             text="删除",
             fg_color="#c0392b",
             hover_color="#a93226",
-            width=52,
-            height=26,
+            width=64,
+            height=30,
             font=(ctk.CTkFont, FONT_SM),
             command=lambda: on_delete(user.get("userName")),
         ).pack(side="left", padx=(0, 4))
@@ -95,15 +110,24 @@ class UserCard(ctk.CTkFrame):
         ctk.CTkButton(
             btn_frame,
             text="选活动",
-            width=52,
-            height=26,
+            width=70,
+            height=30,
             font=(ctk.CTkFont, FONT_SM),
             command=lambda: on_select_activity(user.get("userName")),
         ).pack(side="left")
 
+        ctk.CTkButton(
+            btn_frame,
+            text="重新登录",
+            width=78,
+            height=30,
+            font=(ctk.CTkFont, FONT_SM),
+            command=lambda: on_relogin(user.get("userName")),
+        ).pack(side="left", padx=(4, 0))
+
         # ========== 右板块 ==========
         right = ctk.CTkFrame(self, fg_color="transparent")
-        right.grid(row=0, column=1, sticky="nsew", padx=(PAD_SM, PAD_MD), pady=PAD_MD)
+        right.grid(row=0, column=1, sticky="new", padx=(PAD_SM, PAD_MD), pady=PAD_MD)
 
         activity_ids = user.get("activity_ids", [])
         right_header = ctk.CTkFrame(right, fg_color="transparent")
@@ -112,7 +136,8 @@ class UserCard(ctk.CTkFrame):
         self.activity_count_label = ctk.CTkLabel(
             right_header,
             text=f"已选活动: {len(activity_ids)}",
-            font=(ctk.CTkFont, FONT_SM, "bold"),
+            font=(ctk.CTkFont, FONT_MD, "bold"),
+            height=26,
         )
         self.activity_count_label.pack(side="left")
 
@@ -120,9 +145,9 @@ class UserCard(ctk.CTkFrame):
             right_header,
             text="清空活动",
             fg_color="gray",
-            width=52,
-            height=22,
-            font=(ctk.CTkFont, FONT_SM - 2),
+            width=76,
+            height=26,
+            font=(ctk.CTkFont, FONT_MD),
             command=lambda: on_clear_activities(user.get("userName")),
             state="normal" if activity_ids else "disabled",
         )
@@ -132,19 +157,23 @@ class UserCard(ctk.CTkFrame):
             right,
             fg_color="transparent",
             corner_radius=4,
+            height=108,
         )
-        self.activity_scroll.pack(fill="both", expand=True)
-        self.activity_scroll.grid_columnconfigure(0, weight=1)
+        # CTkScrollableFrame 的滚动条默认高 200，会反过来撑大整张卡片。
+        self.activity_scroll._scrollbar.configure(height=108)
+        self.activity_scroll.pack(fill="x")
+        # 内容左紧凑：唯一拉伸列放在末尾，多余空间留在右侧
+        self.activity_scroll.grid_columnconfigure(3, weight=1)
         self.activity_scroll.grid_columnconfigure(1, minsize=55)
-        self.activity_scroll.grid_columnconfigure(2, minsize=65)
+        self.activity_scroll.bind("<Configure>", lambda e: self._relayout_if_needed())
 
     def set_credit(self, credit: float):
         self.credit_label.configure(text=f"{credit:.1f}")
 
     def set_token_status(self, valid: bool):
         dot = "●" if valid else "●"
-        color = "#2ecc71" if valid else "#e74c3c"
-        text = "Token 有效" if valid else "Token 无效"
+        color = ("#196b42", "#6bd69b") if valid else ("#a72727", "#ff8989")
+        text = "已登录" if valid else "登录已过期"
         self.token_label.configure(text=f"{dot} {text}", text_color=color)
 
     def load_activities(self):
@@ -155,6 +184,8 @@ class UserCard(ctk.CTkFrame):
             return
 
         self._show_activity_placeholder("加载中...")
+        self._detail_generation += 1
+        generation = self._detail_generation
 
         def _run():
             from core.tools import get_info
@@ -168,10 +199,30 @@ class UserCard(ctk.CTkFrame):
                         "name": info.get("name", str(aid)),
                         "credit": info.get("credit", 0),
                         "startTime": info.get("startTime", ""),
+                        "joinStartTime": info.get("joinStartTime", ""),
+                        "joinEndTime": info.get("joinEndTime", ""),
+                        "endTime": info.get("endTime", ""),
                     })
-            self.after(0, lambda: self._populate_activities(activities))
+            self._detail_results.put((generation, activities))
 
         threading.Thread(target=_run, daemon=True).start()
+
+    def _poll_details(self):
+        while True:
+            try:
+                generation, activities = self._detail_results.get_nowait()
+            except Empty:
+                break
+            if generation == self._detail_generation:
+                self._populate_activities(activities)
+        self._detail_poll_id = self.after(100, self._poll_details)
+
+    def destroy(self):
+        self._detail_generation += 1
+        if self._detail_poll_id:
+            self.after_cancel(self._detail_poll_id)
+            self._detail_poll_id = None
+        super().destroy()
 
     def _show_activity_placeholder(self, text: str):
         self._clear_activities()
@@ -181,7 +232,7 @@ class UserCard(ctk.CTkFrame):
             font=(ctk.CTkFont, FONT_SM),
             text_color="gray",
         )
-        lbl.grid(row=0, column=0, sticky="w", padx=4, pady=2, columnspan=3)
+        lbl.grid(row=0, column=0, sticky="w", padx=4, pady=2, columnspan=4)
         self._activity_rows.append(lbl)
 
     def _populate_activities(self, activities: List[Dict]):
@@ -190,39 +241,78 @@ class UserCard(ctk.CTkFrame):
             self._show_activity_placeholder("暂无已选活动")
             return
 
-        for i, a in enumerate(activities):
+        for a in activities:
             name = a["name"]
             credit = a.get("credit", 0)
-            raw_time = a.get("startTime", "")
-            if len(raw_time) >= 16:
-                start_time = raw_time[5:16]
-            else:
-                start_time = raw_time
 
             lbl_name = ctk.CTkLabel(
                 self.activity_scroll, text=name, anchor="w",
-                font=(ctk.CTkFont, FONT_SM - 1), text_color="gray",
+                font=(ctk.CTkFont, FONT_SM, "bold"),
+                text_color=("#34312e", "#e0e0e0"),
             )
-            lbl_name.grid(row=i, column=0, sticky="w", padx=(4, 2), pady=1)
             self._activity_rows.append(lbl_name)
 
             lbl_credit = ctk.CTkLabel(
                 self.activity_scroll, text=f"{credit}分", anchor="e",
-                font=(ctk.CTkFont, FONT_SM - 1), text_color="gray",
+                font=(ctk.CTkFont, FONT_SM),
+                text_color=("#55514d", "#c1c1c1"),
             )
-            lbl_credit.grid(row=i, column=1, sticky="e", padx=(4, 10), pady=1)
             self._activity_rows.append(lbl_credit)
 
             lbl_time = ctk.CTkLabel(
-                self.activity_scroll, text=start_time, anchor="w",
-                font=(ctk.CTkFont, FONT_SM - 1), text_color="gray",
+                self.activity_scroll, text=self._time_text(a), anchor="w",
+                font=(ctk.CTkFont, FONT_SM),
+                text_color=("#55514d", "#c1c1c1"),
             )
-            lbl_time.grid(row=i, column=2, sticky="w", padx=(0, 2), pady=1)
             self._activity_rows.append(lbl_time)
+            self._activity_row_widgets.append((lbl_name, lbl_credit, lbl_time))
 
+        self._wide_layout = None  # 数据重建后强制重新判定布局
+        self._relayout_if_needed()
         self.activity_count_label.configure(text=f"已选活动: {len(activities)}")
+
+    @staticmethod
+    def _time_text(a):
+        """活动开始与结束时间区间；时间缺失时尽量显示已知部分。"""
+        parts = []
+        start = parse_activity_time(a.get("startTime"))
+        end = parse_activity_time(a.get("endTime"))
+        if start:
+            parts.append(f"活动开始：{start:%m-%d %H:%M}")
+        if end:
+            parts.append(f"活动结束：{end:%m-%d %H:%M}")
+        return " ~ ".join(parts)
+
+    def _relayout_if_needed(self):
+        """窗口够宽时时间排第三列（单行紧凑），不够时落到第二行（完整显示）。"""
+        if not self._activity_row_widgets:
+            return
+        width = self.activity_scroll.winfo_width()
+        if width < 50:
+            wide = False
+        else:
+            need = max(t.winfo_reqwidth() for _, _, t in self._activity_row_widgets) + 55 + 120
+            wide = width >= need
+        if wide != self._wide_layout:
+            self._wide_layout = wide
+            self._apply_row_layout(wide)
+
+    def _apply_row_layout(self, wide: bool):
+        for i, (lbl_name, lbl_credit, lbl_time) in enumerate(self._activity_row_widgets):
+            if wide:
+                lbl_name.grid(row=i, column=0, sticky="w", padx=(4, 2), pady=1)
+                lbl_credit.grid(row=i, column=1, sticky="e", padx=(4, 10), pady=1)
+                lbl_time.grid(row=i, column=2, sticky="w", padx=(0, 2), pady=1)
+            else:
+                row = i * 2
+                lbl_name.grid(row=row, column=0, sticky="w", padx=(4, 2), pady=(1, 0))
+                lbl_credit.grid(row=row, column=1, sticky="e", padx=(4, 10), pady=(1, 0))
+                lbl_time.grid(row=row + 1, column=0, columnspan=4, sticky="w",
+                              padx=(4, 2), pady=(0, 1))
 
     def _clear_activities(self):
         for w in self._activity_rows:
             w.destroy()
         self._activity_rows.clear()
+        self._activity_row_widgets.clear()
+        self._wide_layout = None

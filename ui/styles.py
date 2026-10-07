@@ -24,20 +24,27 @@ DARK_BORDER = "#3a3a3a"
 DARK_NAV = "#0d0d1a"
 
 # 日志颜色
-LOG_COLORS = {
-    "SUCCESS": "#2ecc71",
-    "ERROR": "#e74c3c",
-    "WARNING": "#f39c12",
-    "INFO": "#bdc3c7",
-    "DEBUG": "#95a5a6",
+LOG_COLORS_LIGHT = {
+    "SUCCESS": "#196b42",
+    "ERROR": "#a72727",
+    "WARNING": "#8a4b00",
+    "INFO": "#343434",
+    "DEBUG": "#595959",
+}
+LOG_COLORS_DARK = {
+    "SUCCESS": "#6bd69b",
+    "ERROR": "#ff8989",
+    "WARNING": "#ffc16b",
+    "INFO": "#e0e0e0",
+    "DEBUG": "#adadad",
 }
 
 # 字体
 FONT_FAMILY = "Microsoft YaHei"
-FONT_SM = 11
-FONT_MD = 13
-FONT_LG = 16
-FONT_XL = 20
+FONT_SM = 12
+FONT_MD = 14
+FONT_LG = 18
+FONT_XL = 22
 
 # 间距
 PAD_XS = 2

@@ -6,7 +6,7 @@ import string
 from typing import Dict, Any
 
 from Crypto.Cipher import AES
-from Crypto.Util.Padding import pad, unpad
+from Crypto.Util.Padding import pad
 from Crypto.Random import get_random_bytes
 
 # 固定 16 字节密钥
@@ -27,11 +27,6 @@ def current_timestamp_str() -> str:
 def _aes_cbc_encrypt_pkcs7(plaintext_bytes: bytes, key: bytes, iv: bytes) -> bytes:
     cipher = AES.new(key, AES.MODE_CBC, iv=iv)
     return cipher.encrypt(pad(plaintext_bytes, AES.block_size))
-
-
-def _aes_cbc_decrypt_pkcs7(ciphertext_bytes: bytes, key: bytes, iv: bytes) -> bytes:
-    cipher = AES.new(key, AES.MODE_CBC, iv=iv)
-    return unpad(cipher.decrypt(ciphertext_bytes), AES.block_size)
 
 
 def encrypt_payload_to_n(payload: Dict[str, Any], iv: bytes | None = None) -> str:

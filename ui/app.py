@@ -2,19 +2,24 @@
 import os
 import queue
 import customtkinter as ctk
+from tkinter import messagebox
 from loguru import logger
 
+from core.signup_tasks import SignupTasks
 from ui.styles import LIGHT_BG, DARK_BG
 from ui.pages.dashboard_page import DashboardPage
 
 
 class App(ctk.CTk):
-    def __init__(self, user_manager):
+    def __init__(self, user_manager, task_store=None):
         super().__init__()
         self.user_manager = user_manager
         self.log_queue = queue.Queue()
+        self.task_manager = SignupTasks(store=task_store)
+        self.task_manager.import_legacy_monitors(
+            user_manager.get_pending_monitors(), user_manager.user_datas)
 
-        self.title("PU-SignUpBot   PU口袋校园报名助手")
+        self.title("PU-SignUpBot  ‧  PU口袋校园报名助手")
         self.minsize(960, 640)
         self.geometry("1100x740")
         self.configure(fg_color=(LIGHT_BG, DARK_BG))
@@ -28,6 +33,15 @@ class App(ctk.CTk):
 
         self._build()
         self._setup_log_pipeline()
+        self.protocol("WM_DELETE_WINDOW", self._on_close)
+
+    def _on_close(self):
+        if self.task_manager.has_active() and not messagebox.askyesno(
+            "报名任务仍在运行", "关闭程序会停止正在等待或报名的任务。确定退出吗？", parent=self
+        ):
+            return
+        self.task_manager.cancel_all()
+        self.destroy()
 
     def _build(self):
         self.grid_rowconfigure(0, weight=1)
@@ -37,6 +51,7 @@ class App(ctk.CTk):
             self,
             self.user_manager,
             log_queue=self.log_queue,
+            task_manager=self.task_manager,
         )
         self.dashboard.grid(row=0, column=0, sticky="nsew")
 

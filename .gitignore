@@ -2,6 +2,9 @@
 config.ini
 .cryptwood
 .cryptUserData
+.env
+.env.*
+!.env.example
 .idea
 __pycache__
 .venv
@@ -9,11 +12,21 @@ __pycache__
 .qoder
 CLAUDE.md
 PRD.md
+logs
+*.log
 
 # 用户隐私数据
 user_data.json
+user_data.json.bak
+settings.json
+settings.json.bak
+signup_tasks.json
+signup_tasks.json.bak
+.pu-*.tmp
 
 # PyInstaller 构建产物
 build/
 dist/
 *.spec
+!PU-SignUpBot-GUI.spec
+tempCodeRunnerFile.py

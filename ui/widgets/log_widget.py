@@ -1,7 +1,7 @@
 """实时彩色日志控件"""
 import queue
 import customtkinter as ctk
-from ui.styles import FONT_SM, LOG_COLORS
+from ui.styles import FONT_SM, LOG_COLORS_LIGHT, LOG_COLORS_DARK
 
 
 class LogWidget(ctk.CTkTextbox):
@@ -14,8 +14,14 @@ class LogWidget(ctk.CTkTextbox):
             **kwargs,
         )
         self._log_queue = log_queue
-        self._log_colors = LOG_COLORS
+        self.update_theme_colors()
         self._pull_logs()
+
+    def update_theme_colors(self):
+        self._log_colors = (LOG_COLORS_DARK if ctk.get_appearance_mode() == "Dark"
+                            else LOG_COLORS_LIGHT)
+        for level, color in self._log_colors.items():
+            self._ensure_tag(f"log_{level.lower()}", color)
 
     def _pull_logs(self):
         try:
@@ -28,7 +34,7 @@ class LogWidget(ctk.CTkTextbox):
 
     def _append_log(self, level: str, message: str):
         self.configure(state="normal")
-        color = self._log_colors.get(level, "#ffffff")
+        color = self._log_colors.get(level, self._log_colors["INFO"])
 
         tag = f"log_{level.lower()}"
         self._ensure_tag(tag, color)
