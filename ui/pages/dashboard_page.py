@@ -4,7 +4,7 @@ import threading
 from queue import Empty, Queue
 import webbrowser
 import tkinter as tk
-from datetime import datetime
+from datetime import datetime, timedelta
 import darkdetect
 import customtkinter as ctk
 from PIL import Image, ImageDraw
@@ -19,6 +19,8 @@ from ui.widgets.log_widget import LogWidget
 from ui.pages.signup_inline import SignupInline
 from core.activity_plan import upcoming_signups, countdown, parse_activity_time
 from core.signup_tasks import TaskPersistenceError
+from core.accounts import account_key, account_from_task, credential_snapshot, credentials_match
+from core.config import MAX_ACCOUNTS
 
 _IMG_DIR = os.path.dirname(os.path.abspath(__file__))
 _SUN_PATH = os.path.join(_IMG_DIR, "sun.png")
@@ -52,6 +54,8 @@ class DashboardPage(ctk.CTkFrame):
         self._credit_results = Queue()
         self._plan_results = Queue()
         self._plan_generation = 0
+        self._credit_generation = 0
+        self._task_clock = {}
         self._plan_index = 0   # 8s 轮换的当前页
         self._plan_ticks = 0
         self.cards = []
@@ -80,23 +84,28 @@ class DashboardPage(ctk.CTkFrame):
             if generation != self._plan_generation:
                 continue
             changed = False
-            for key, aid, result in results:
+            for snapshot, aid, result in results:
                 if isinstance(result, Exception):
                     continue
-                for user in self.user_manager.user_datas:
-                    if (str(user.get("sid")), user.get("userName")) == key and aid in {
-                            str(item) for item in user.get("activity_ids", [])}:
-                        user.setdefault("activity_details", {})[aid] = result
-                        changed = True
-                        break
+                user = self.user_manager.get_user(snapshot[1])
+                if credentials_match(user, snapshot) and aid in {str(item) for item in user.get("activity_ids", [])}:
+                    user.setdefault("activity_details", {})[aid] = result
+                    changed = True
             if changed:
-                self.user_manager.write_user_data()
+                try:
+                    self.user_manager.write_user_data()
+                except OSError as exc:
+                    self._show_notification(f"保存活动详情失败：{exc}")
                 self._render_plan()
         while True:
             try:
-                key, status, value = self._credit_results.get_nowait()
+                generation, snapshot, status, value = self._credit_results.get_nowait()
             except Empty:
                 break
+            user = self.user_manager.get_user(snapshot[1])
+            if generation != self._credit_generation or not credentials_match(user, snapshot):
+                continue
+            key = account_key(user)
             if status == "valid":
                 self._update_card_token(key, True)
                 if value is not None:
@@ -119,6 +128,7 @@ class DashboardPage(ctk.CTkFrame):
                     event = self.task_manager.events.get_nowait()
                 except Empty:
                     break
+                self._apply_task_time(event)
                 if isinstance(self._inline, SignupInline):
                     self._inline.on_task_event(event)
                 if event.state in ("success", "failed", "cancelled"):
@@ -134,6 +144,17 @@ class DashboardPage(ctk.CTkFrame):
                     f"{prefix}{latest.username} | 活动 {latest.activity_id}：{latest.message}",
                     kind="success" if all(item.state == "success" for item in finished) else "warning")
         self.after(100, self._poll_task_events)
+
+    def _apply_task_time(self, event):
+        user = self.user_manager.get_user(account_from_task(event.task_id))
+        if user is None or event.activity_id not in {str(aid) for aid in user.get("activity_ids", [])}:
+            return
+        self._task_clock[event.task_id] = event.server_offset
+        if event.join_start_time:
+            info = user.setdefault("activity_details", {}).setdefault(event.activity_id, {})
+            info["开始报名时间"] = event.join_start_time
+            if event.join_end_time:
+                info["报名截止时间"] = event.join_end_time
 
     # ======================== 头部 ========================
 
@@ -162,7 +183,7 @@ class DashboardPage(ctk.CTkFrame):
         btn_frame.pack(side="right")
 
         self.add_btn = ctk.CTkButton(btn_frame, text="＋ 添加用户", height=36, font=(ctk.CTkFont, FONT_MD), command=self._show_add_user)
-        self.add_btn.pack(side="left", padx=(0, PAD_SM))
+        self.add_btn.pack(side="left", padx=(0, PAD_MD))
 
         self.signup_btn = ctk.CTkButton(btn_frame, text="▶ 开始等待报名", fg_color="#2e8b57", hover_color="#1e6b3a", height=36, font=(ctk.CTkFont, FONT_MD), command=self._start_signup)
         self.signup_btn.pack(side="left", padx=(0, PAD_SM))
@@ -191,24 +212,25 @@ class DashboardPage(ctk.CTkFrame):
         self._countdown_label.pack(side="right", padx=PAD_MD)
 
     def _tick_plan(self):
-        self._plan_ticks += 1
-        if self._plan_ticks >= 8:
-            self._plan_ticks = 0
-            self._plan_index += 1
+        self._plan_index = 0
         self._render_plan()
         self.after(1000, self._tick_plan)
 
     def _render_plan(self):
         users = self.user_manager.user_datas
         total = sum(len(user.get("activity_ids", [])) for user in users)
-        upcoming = upcoming_signups(users)
+        tasks = self.task_manager.snapshot() if self.task_manager else []
+        upcoming = upcoming_signups(users, tasks=tasks)
         if upcoming:
             if self._plan_index >= len(upcoming):
                 self._plan_index = 0
             start, username, aid, info = upcoming[self._plan_index]
             self._plan_label.configure(text=self._plan_text(
                 username, info.get("活动名称") or f"活动 {aid}", info))
-            self._countdown_label.configure(text=countdown(start))
+            sid = next((user.get("sid") for user in users if user.get("userName") == username and
+                        (user.get("activity_details") or {}).get(aid) is info), "")
+            offset = self._task_clock.get(f"{sid}:{username}:{aid}", 0.0)
+            self._countdown_label.configure(text=countdown(start, datetime.now() + timedelta(seconds=offset)))
             self._page_label.configure(text=f"({self._plan_index + 1}/{len(upcoming)})")
         else:
             self._plan_index = 0
@@ -239,17 +261,16 @@ class DashboardPage(ctk.CTkFrame):
                 aid = str(aid)
                 if (aid not in details
                         or "报名截止时间" not in (details.get(aid) or {})) and user.get("token"):
-                    missing.append((str(user.get("sid")), user.get("userName"),
-                                    user.get("token"), aid))
+                    missing.append((credential_snapshot(user), dict(user), aid))
 
         def run():
             results = []
-            for sid, username, token, aid in missing:
+            for snapshot, user, aid in missing:
                 try:
-                    result = get_single_activity(aid, get_info(aid, token, sid, strict=True))
+                    result = get_single_activity(aid, get_info(aid, user.get("token"), user.get("sid"), strict=True))
                 except Exception as exc:
                     result = exc
-                results.append(((sid, username), aid, result))
+                results.append((snapshot, aid, result))
             self._plan_results.put((generation, results))
 
         if missing:
@@ -338,7 +359,7 @@ class DashboardPage(ctk.CTkFrame):
             self.cards.append(card)
             card.load_activities()
 
-        self.status_label.configure(text=f"用户: {len(users)}/4  |  活动: {total}")
+        self.status_label.configure(text=f"用户: {len(users)}/{MAX_ACCOUNTS}  |  活动: {total}")
         self.signup_btn.configure(state="normal" if total else "disabled")
         self._render_plan()
         self._hydrate_plan()
@@ -349,42 +370,39 @@ class DashboardPage(ctk.CTkFrame):
     def _fetch_credits(self, users):
         from core.tools import get_user_credit
         from core.pu_api import PuApiError
+        self._credit_generation += 1
+        generation = self._credit_generation
+        snapshots = [(credential_snapshot(user), dict(user)) for user in users]
 
-        def _run():
-            for user in users:
-                token = user.get("token")
-                sid = user.get("sid")
-                if not token or not sid:
+        def run():
+            for snapshot, user in snapshots:
+                if not user.get("token") or not user.get("sid"):
                     continue
-                key = (user.get("userName"), sid)
                 try:
-                    info = get_user_credit(token, sid, strict=True)
+                    info = get_user_credit(user["token"], user["sid"], strict=True)
+                    try:
+                        credit = float(info["credit"]) if info.get("credit") is not None else None
+                    except (TypeError, ValueError):
+                        credit = None
+                    self._credit_results.put((generation, snapshot, "valid", credit))
                 except PuApiError as exc:
                     if exc.kind == "auth":
-                        self._credit_results.put((key, "expired", None))
-                    self._credit_results.put((key, "error", str(exc)))
-                    continue
+                        self._credit_results.put((generation, snapshot, "expired", None))
+                    self._credit_results.put((generation, snapshot, "error", str(exc)))
                 except Exception as exc:
-                    self._credit_results.put((key, "error", str(exc)))
-                    continue
-                credit = info.get("credit")
-                try:
-                    credit = float(credit) if credit is not None else None
-                except (TypeError, ValueError):
-                    credit = None
-                self._credit_results.put((key, "valid", credit))
+                    self._credit_results.put((generation, snapshot, "error", str(exc)))
 
-        threading.Thread(target=_run, daemon=True).start()
+        threading.Thread(target=run, daemon=True).start()
 
     def _update_card_credit(self, key: tuple, credit: float):
         for card in self.cards:
-            if (card.user.get("userName"), card.user.get("sid")) == key:
+            if account_key(card.user) == key:
                 card.set_credit(credit)
                 break
 
     def _update_card_token(self, key: tuple, valid: bool):
         for card in self.cards:
-            if (card.user.get("userName"), card.user.get("sid")) == key:
+            if account_key(card.user) == key:
                 card.set_token_status(valid)
                 break
 
@@ -408,7 +426,7 @@ class DashboardPage(ctk.CTkFrame):
         self.cards_frame.pack(fill="both", expand=True, pady=(0, PAD_MD))
 
     def _show_add_user(self):
-        if len(self.user_manager.user_datas) >= 4:
+        if len(self.user_manager.user_datas) >= MAX_ACCOUNTS:
             self._show_notification("用户添加数量已达上限，请删除后再添加！")
             return
         self._hide_inline()
@@ -444,6 +462,8 @@ class DashboardPage(ctk.CTkFrame):
             self.task_manager,
             on_close=self._hide_inline,
             on_change=self.refresh,
+            on_relogin=self._on_relogin,
+            on_details=self._on_select_activity,
         )
         self._show_inline(w)
 
@@ -488,7 +508,7 @@ class DashboardPage(ctk.CTkFrame):
     def _on_delete(self, username: str):
         user = self.user_manager.get_user(username)
         if user and self.task_manager:
-            self.task_manager.cancel_account(user.get("sid"), username)
+            self.task_manager.cancel_account(user.get("sid"), user.get("userName"))
         self.user_manager.remove_user(username)
         self.user_manager.write_user_data()
         self.refresh()
@@ -496,7 +516,7 @@ class DashboardPage(ctk.CTkFrame):
     def _on_clear_activities(self, username: str):
         user = self.user_manager.get_user(username)
         if user and self.task_manager:
-            self.task_manager.cancel_account(user.get("sid"), username)
+            self.task_manager.cancel_account(user.get("sid"), user.get("userName"))
         self.user_manager.update_user(username, {"activity_ids": [], "activity_details": {}})
         self.user_manager.write_user_data()
         self.refresh()

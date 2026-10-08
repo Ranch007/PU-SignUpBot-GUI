@@ -6,6 +6,7 @@ from tkinter import messagebox
 from loguru import logger
 
 from core.signup_tasks import SignupTasks
+from core.config import APP_VERSION
 from ui.styles import LIGHT_BG, DARK_BG
 from ui.pages.dashboard_page import DashboardPage
 
@@ -19,7 +20,7 @@ class App(ctk.CTk):
         self.task_manager.import_legacy_monitors(
             user_manager.get_pending_monitors(), user_manager.user_datas)
 
-        self.title("PU-SignUpBot  ‧  PU口袋校园报名助手")
+        self.title(f"PU-SignUpBot v{APP_VERSION}  ‧  PU口袋校园报名助手")
         self.minsize(960, 640)
         self.geometry("1100x740")
         self.configure(fg_color=(LIGHT_BG, DARK_BG))
@@ -36,8 +37,13 @@ class App(ctk.CTk):
         self.protocol("WM_DELETE_WINDOW", self._on_close)
 
     def _on_close(self):
+        active = [event for event in self.task_manager.snapshot()
+                  if event.state not in {"success", "failed", "cancelled", "needs_restore"}]
+        summary = "\n".join(f"{event.username} · 活动 {event.activity_id}：{event.message}" for event in active[:8])
+        if len(active) > 8:
+            summary += f"\n另有 {len(active) - 8} 项任务"
         if self.task_manager.has_active() and not messagebox.askyesno(
-            "报名任务仍在运行", "关闭程序会停止正在等待或报名的任务。确定退出吗？", parent=self
+            "报名任务仍在运行", f"关闭程序会停止以下任务：\n{summary}\n\n确定退出吗？", parent=self
         ):
             return
         self.task_manager.cancel_all()
@@ -70,5 +76,6 @@ class App(ctk.CTk):
             enqueue,
             format="{level.name}|{message}",
             level="INFO",
+            diagnose=False,
         )
         logger.info("GUI 日志管道已初始化")

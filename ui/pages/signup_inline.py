@@ -8,6 +8,7 @@ import customtkinter as ctk
 
 from core.signup_tasks import SignupEvent, SignupTasks, TaskPersistenceError, TERMINAL_STATES
 from core.restore import validate_restore
+from core.accounts import account_from_task, credentials_match, credential_snapshot
 from ui.styles import FONT_LG, FONT_MD, FONT_SM, PAD_LG, PAD_MD, PAD_SM, RADIUS, LIGHT_FRAME, DARK_FRAME
 
 
@@ -26,7 +27,8 @@ _STATES = {
 
 class SignupInline(ctk.CTkFrame):
     def __init__(self, parent, user_manager, log_queue, task_manager: SignupTasks,
-                 on_close: Callable, on_change: Callable | None = None, **kw):
+                 on_close: Callable, on_change: Callable | None = None,
+                 on_relogin: Callable | None = None, on_details: Callable | None = None, **kw):
         super().__init__(parent, corner_radius=RADIUS,
                          fg_color=(LIGHT_FRAME, DARK_FRAME), **kw)
         self.user_manager = user_manager
@@ -34,6 +36,8 @@ class SignupInline(ctk.CTkFrame):
         self.task_manager = task_manager
         self._on_close = on_close
         self._on_change = on_change
+        self._on_relogin = on_relogin
+        self._on_details = on_details
         self._rows: dict[str, dict] = {}
         self._restore_results = Queue()
         self._restore_inflight: set[str] = set()
@@ -58,15 +62,15 @@ class SignupInline(ctk.CTkFrame):
             return
         while True:
             try:
-                task_id, token, result = self._restore_results.get_nowait()
+                task_id, snapshot, result = self._restore_results.get_nowait()
             except Empty:
                 break
             self._restore_inflight.discard(task_id)
             row = self._rows.get(task_id)
             if not row or row["state"] != "needs_restore":
                 continue
-            user = self.user_manager.get_user(row["username"])
-            if not user or user.get("token") != token or row["activity_id"] not in {
+            user = self.user_manager.get_user(row["account"])
+            if not credentials_match(user, snapshot) or row["activity_id"] not in {
                     str(aid) for aid in user.get("activity_ids", [])}:
                 row["status"].configure(text="账号或活动已变化，请重新检查")
                 row["action"].configure(text="检查并恢复", state="normal")
@@ -98,11 +102,11 @@ class SignupInline(ctk.CTkFrame):
         if task_id in self._restore_inflight:
             return
         row = self._rows[task_id]
-        user = self.user_manager.get_user(row["username"])
+        user = self.user_manager.get_user(row["account"])
         if not user:
             return
         aid = row["activity_id"]
-        token = user.get("token")
+        credentials = credential_snapshot(user)
         snapshot = dict(user)
         self._restore_inflight.add(task_id)
         row["status"].configure(text="正在核对登录、活动状态、时间和名额...")
@@ -113,7 +117,7 @@ class SignupInline(ctk.CTkFrame):
                 result = validate_restore(snapshot, aid)
             except Exception as exc:
                 result = exc
-            self._restore_results.put((task_id, token, result))
+            self._restore_results.put((task_id, credentials, result))
 
         threading.Thread(target=run, daemon=True).start()
 
@@ -157,7 +161,7 @@ class SignupInline(ctk.CTkFrame):
         self._table.pack(fill="both", expand=True, padx=PAD_LG, pady=(0, PAD_MD))
         header = ctk.CTkFrame(self._table, fg_color="transparent")
         header.pack(fill="x", padx=PAD_MD, pady=(PAD_MD, PAD_SM))
-        for title, width in (("用户", 90), ("活动", 220), ("状态与说明", None), ("时间", 80), ("操作", 115)):
+        for title, width in (("用户", 90), ("活动", 220), ("状态与说明", None), ("时间", 80), ("操作", 200)):
             options = {"width": width} if width else {}
             ctk.CTkLabel(header, text=title, font=(ctk.CTkFont, FONT_SM, "bold"),
                          **options).pack(side="left", padx=PAD_SM,
@@ -183,7 +187,7 @@ class SignupInline(ctk.CTkFrame):
         for event in history:
             state = _STATES[event.state][0]
             ctk.CTkLabel(self._history_frame,
-                         text=f"{event.updated_at}  ·  {event.username}  ·  活动 {event.activity_id}  ·  {state}  ·  {event.message}",
+                         text=f"{event.updated_at}  ·  SID {account_from_task(event.task_id)[0]} · {event.username}  ·  活动 {event.activity_id}  ·  {state}  ·  {event.message}",
                          font=(ctk.CTkFont, FONT_SM), anchor="w").pack(fill="x", padx=PAD_SM, pady=2)
 
     def _start(self):
@@ -204,21 +208,25 @@ class SignupInline(ctk.CTkFrame):
     def _add_row(self, event: SignupEvent):
         row = ctk.CTkFrame(self._table, corner_radius=6)
         row.pack(fill="x", padx=PAD_MD, pady=2)
-        user = self.user_manager.get_user(event.username) or {}
+        user = self.user_manager.get_user(account_from_task(event.task_id)) or {}
         detail = (user.get("activity_details") or {}).get(event.activity_id) or {}
         name = detail.get("活动名称") or f"活动 {event.activity_id}"
         signup_time = detail.get("开始报名时间") or "待确认"
-        username = ctk.CTkLabel(row, text=event.username, font=(ctk.CTkFont, FONT_SM), width=90)
+        username = ctk.CTkLabel(row, text=f"{event.username}\nSID {user.get('sid')}", font=(ctk.CTkFont, FONT_SM), width=90)
         activity = ctk.CTkLabel(row, text=f"{name}\n报名 {signup_time}",
                                 font=(ctk.CTkFont, FONT_SM), width=220,
-                                anchor="w", justify="left")
-        status = ctk.CTkLabel(row, text="", font=(ctk.CTkFont, FONT_SM), anchor="w")
+                                anchor="w", justify="left", wraplength=200)
+        status = ctk.CTkLabel(row, text="", font=(ctk.CTkFont, FONT_SM), anchor="w",
+                             wraplength=180, justify="left")
         when = ctk.CTkLabel(row, text="", font=(ctk.CTkFont, FONT_SM), width=80)
-        actions = ctk.CTkFrame(row, fg_color="transparent", width=115)
+        actions = ctk.CTkFrame(row, fg_color="transparent", width=200)
         action = ctk.CTkButton(actions, text="开始", fg_color="#2e8b57", width=52, height=24,
                                font=(ctk.CTkFont, FONT_SM),
                                command=lambda tid=event.task_id: self._act(tid))
         action.pack(side="left", padx=(0, 4))
+        guide = ctk.CTkButton(actions, text="详情", fg_color="gray", width=70, height=24,
+                             font=(ctk.CTkFont, FONT_SM), command=lambda tid=event.task_id: self._guide(tid))
+        guide.pack(side="left", padx=(0, 4))
         ctk.CTkButton(actions, text="移除", fg_color="gray", width=52, height=24,
                       font=(ctk.CTkFont, FONT_SM),
                       command=lambda tid=event.task_id: self._remove(tid)).pack(side="left")
@@ -227,7 +235,9 @@ class SignupInline(ctk.CTkFrame):
             widget.pack(side="left", padx=PAD_SM, fill="x" if stretch else "none", expand=stretch)
         self._rows[event.task_id] = {"state": event.state, "status": status,
                                      "time": when, "action": action, "frame": row,
-                                     "username": event.username, "activity_id": event.activity_id}
+                                     "username": event.username, "activity_id": event.activity_id,
+                                     "account": account_from_task(event.task_id), "activity": activity,
+                                     "name": name, "guide": guide, "error_kind": ""}
         self._apply_filter()
 
     def _visible_row(self, task_id: str) -> bool:
@@ -247,7 +257,7 @@ class SignupInline(ctk.CTkFrame):
         if row["state"] == "needs_restore":
             self._check_restore(task_id)
         elif row["state"] in ("pending", "failed", "cancelled"):
-            user = self.user_manager.get_user(row["username"])
+            user = self.user_manager.get_user(row["account"])
             if user:
                 if user.get("credential_error"):
                     row["status"].configure(text="密码无法解密，请先重新登录")
@@ -268,13 +278,13 @@ class SignupInline(ctk.CTkFrame):
     def _remove(self, task_id: str):
         row = self._rows.pop(task_id)
         self.task_manager.cancel(task_id)
-        user = self.user_manager.get_user(row["username"])
+        user = self.user_manager.get_user(row["account"])
         if user:
             aid = row["activity_id"]
             selected = [item for item in user.get("activity_ids", []) if str(item) != aid]
             details = {key: value for key, value in (user.get("activity_details") or {}).items()
                        if key != aid}
-            self.user_manager.update_user(row["username"], {"activity_ids": selected,
+            self.user_manager.update_user(row["account"], {"activity_ids": selected,
                                                                "activity_details": details})
             self.user_manager.write_user_data()
         row["frame"].destroy()
@@ -284,13 +294,17 @@ class SignupInline(ctk.CTkFrame):
             self._on_change()
 
     def on_task_event(self, event: SignupEvent):
-        user = self.user_manager.get_user(event.username)
+        user = self.user_manager.get_user(account_from_task(event.task_id))
         if not user or event.activity_id not in {str(aid) for aid in user.get("activity_ids", [])}:
             return
         if event.task_id not in self._rows:
             self._add_row(event)
         row = self._rows[event.task_id]
         row["state"] = event.state
+        row["error_kind"] = event.error_kind
+        row["guide"].configure(text="重新登录" if event.error_kind == "auth" else "详情")
+        if event.join_start_time:
+            row["activity"].configure(text=f"{row['name']}\n报名 {event.join_start_time}")
         label, icon = _STATES.get(event.state, (event.state, "•"))
         row["status"].configure(text=f"{icon} {label} · {event.message}")
         row["time"].configure(text="" if event.state == "pending" else event.updated_at[-8:])
@@ -307,6 +321,12 @@ class SignupInline(ctk.CTkFrame):
         self._update_controls()
         if event.state in TERMINAL_STATES and self._history_frame.winfo_manager():
             self._render_history()
+
+    def _guide(self, task_id):
+        row = self._rows[task_id]
+        action = self._on_relogin if row["error_kind"] == "auth" else self._on_details
+        if action:
+            action(row["account"])
 
     def _refresh_progress(self):
         states = [row["state"] for task_id, row in self._rows.items() if self._visible_row(task_id)]

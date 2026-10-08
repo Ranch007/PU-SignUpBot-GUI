@@ -1,6 +1,6 @@
 """报名任务调度。任务等待各自的开始时间，请求总并发有统一上限。"""
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 from queue import Queue
 from threading import Event, Lock, Semaphore, Thread
@@ -10,6 +10,7 @@ from loguru import logger
 
 from core.activity_bot import ActivityBot, AccountToken
 from core.task_store import TaskStore
+from core.pu_api import GLOBAL_REQUESTS
 
 
 TERMINAL_STATES = frozenset({"success", "failed", "cancelled"})
@@ -28,14 +29,20 @@ class SignupEvent:
     state: str
     message: str
     updated_at: str = field(default_factory=lambda: datetime.now().isoformat(timespec="seconds"))
+    error_kind: str = ""
+    error_code: int | None = None
+    retryable: bool = False
+    join_start_time: str | None = None
+    join_end_time: str | None = None
+    server_offset: float = 0.0
 
 
 class SignupTasks:
-    def __init__(self, max_requests: int = 8, store: TaskStore | None = None):
+    def __init__(self, max_requests: int | None = None, store: TaskStore | None = None):
         self.events: Queue[SignupEvent] = Queue()
         self.persistence_errors: Queue[str] = Queue()
         self.persistence_error: str | None = None
-        self._requests = Semaphore(max_requests)
+        self._requests = GLOBAL_REQUESTS if max_requests is None else Semaphore(max_requests)
         self._lock = Lock()
         self._tasks: Dict[str, tuple[Event, SignupEvent]] = {}
         self._running_ids: set[str] = set()
@@ -46,8 +53,8 @@ class SignupTasks:
             for record in store.load():
                 event = SignupEvent(**record)
                 if event.state not in TERMINAL_STATES and event.state != RESTORABLE_STATE:
-                    event = SignupEvent(event.task_id, event.username, event.activity_id,
-                                        RESTORABLE_STATE, "上次运行中断，请校验后恢复")
+                    event = replace(event, state=RESTORABLE_STATE, message="上次运行中断，请校验后恢复",
+                                    server_offset=0.0)
                     changed = True
                 self._tasks[event.task_id] = (Event(), event)
             if changed:
@@ -116,7 +123,7 @@ class SignupTasks:
             )
 
     def _publish(self, task_id: str, state: str, message: str,
-                 expected_cancel: Event | None = None) -> None:
+                 expected_cancel: Event | None = None, **metadata) -> None:
         with self._lock:
             cancel, previous = self._tasks[task_id]
             if expected_cancel is not None and cancel is not expected_cancel:
@@ -125,7 +132,8 @@ class SignupTasks:
                 return
             if cancel.is_set() and state not in TERMINAL_STATES:
                 state, message = "cancelling", "正在停止，请等待在途请求结束"
-            event = SignupEvent(task_id, previous.username, previous.activity_id, state, message)
+            event = replace(previous, state=state, message=message,
+                            updated_at=datetime.now().isoformat(timespec="seconds"), **metadata)
             self._tasks[task_id] = (cancel, event)
             self.events.put(event)
             self._persist_locked()
@@ -225,7 +233,16 @@ class SignupTasks:
             bot.sync_server_time(activity_id)
 
             def report(state: str, message: str) -> None:
-                self._publish(task_id, state, message, cancel)
+                error = getattr(bot, "failure", None) if state == "failed" else None
+                start = getattr(bot, "join_start_time", None)
+                end = getattr(bot, "_join_end_time", None)
+                self._publish(task_id, state, message, cancel,
+                              error_kind=error.kind if error else "",
+                              error_code=error.code if error else None,
+                              retryable=error.retryable if error else False,
+                              join_start_time=start.isoformat(sep=" ") if start else None,
+                              join_end_time=end.isoformat(sep=" ") if end else None,
+                              server_offset=getattr(bot, "server_time_offset", 0.0))
 
             bot.signup(activity_id, callback=report)
             current = next((item for item in self.snapshot() if item.task_id == task_id), None)

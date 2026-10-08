@@ -6,97 +6,89 @@ from loguru import logger
 from typing import Dict, List
 
 from core.headers import HEADERS_GET_SCHOOL, HEADERS_ACTIVITY
-from core.pu_api import PuApiError, response_data
+from core.pu_api import PuApiError, PuClient, response_data, retry_delay
+from core.config import MAX_RETRIES
+from core.participation import participation_checks
 
-MAX_RETRIES = 3
-RETRY_BACKOFF = 2  # 指数退避基数
+API = PuClient()
 
 
 def _post_with_retry(url: str, headers: Dict, json_data: Dict,
                      timeout: int = 10, label: str = "") -> requests.Response:
-    """带重试的 POST 请求，处理 SSL/连接临时故障"""
-    last_error = None
+    return API.request("POST", url, headers=headers, json=json_data, timeout=timeout)
+
+
+def _post_api(url: str, headers: Dict, json_data: Dict, label: str,
+              client: PuClient | None = None) -> Dict:
+    if client is not None:
+        return client.request("POST", url, headers=headers, json=json_data, parse=response_data)
     for attempt in range(MAX_RETRIES):
-        try:
-            resp = requests.post(url, headers=headers, json=json_data, timeout=timeout)
-            return resp
-        except (requests.exceptions.SSLError,
-                requests.exceptions.ConnectionError,
-                requests.exceptions.Timeout) as e:
-            last_error = e
-            if attempt < MAX_RETRIES - 1:
-                wait = RETRY_BACKOFF ** attempt
-                logger.warning(
-                    f"{label} 网络异常，{wait}s 后重试 "
-                    f"({attempt + 1}/{MAX_RETRIES}): {e}"
-                )
-                time.sleep(wait)
-    raise last_error
-
-
-def _post_api(url: str, headers: Dict, json_data: Dict, label: str) -> Dict:
-    try:
         response = _post_with_retry(url, headers, json_data, label=label)
-        return response_data(response)
-    except requests.RequestException as exc:
-        raise PuApiError(f"{label}网络失败，请检查连接后重试", "network") from exc
+        try:
+            return response_data(response)
+        except PuApiError as exc:
+            if not exc.retryable or attempt + 1 >= MAX_RETRIES:
+                raise
+            API.wait(retry_delay(response, attempt))
 
 
 def _get_with_retry(url: str, headers: Dict, timeout: int = 10,
                     label: str = "") -> requests.Response:
-    """带重试的 GET 请求"""
-    last_error = None
+    return API.request("GET", url, headers=headers, timeout=timeout)
+
+
+def _get_api(url: str, headers: Dict) -> Dict:
     for attempt in range(MAX_RETRIES):
+        response = _get_with_retry(url, headers)
         try:
-            resp = requests.get(url, headers=headers, timeout=timeout)
-            resp.raise_for_status()
-            return resp
-        except (requests.exceptions.SSLError,
-                requests.exceptions.ConnectionError,
-                requests.exceptions.Timeout) as e:
-            last_error = e
-            if attempt < MAX_RETRIES - 1:
-                wait = RETRY_BACKOFF ** attempt
-                logger.warning(
-                    f"{label} 网络异常，{wait}s 后重试 "
-                    f"({attempt + 1}/{MAX_RETRIES}): {e}"
-                )
-                time.sleep(wait)
-        except requests.exceptions.HTTPError:
-            raise
-    raise last_error
+            return response_data(response)
+        except PuApiError as exc:
+            if not exc.retryable or attempt + 1 >= MAX_RETRIES:
+                raise
+            API.wait(retry_delay(response, attempt))
 
 
-def login(userData: Dict) -> Dict:
+def login(userData: Dict, client: PuClient | None = None) -> Dict:
     """登录并返回 Token 与真实姓名，保留可供界面显示的失败原因。"""
+    if not userData.get("userName") or not userData.get("password"):
+        raise PuApiError("本地登录凭据不完整，请重新登录", "auth")
+    try:
+        sid = int(userData.get("sid"))
+    except (TypeError, ValueError) as exc:
+        raise PuApiError("学校编号无法确认，请重新选择学校", "format") from exc
     try:
         logger.info(f"用户 {userData['userName']} 开始登录")
         from core.headers import HEADERS_LOGIN
 
-        login_url = "https://apis.pocketuni.net/uc/user/login"
+        login_url = PuClient.url("login")
         payload = {
             "userName": userData["userName"],
             "password": userData["password"],
-            "sid": int(userData.get("sid")),
+            "sid": sid,
             "device": "pc",
         }
         data = _post_api(login_url, HEADERS_LOGIN, payload,
-                         label=f"登录({userData['userName']})")
+                         label=f"登录({userData['userName']})", client=client)
         token = data.get("token")
         if token:
             base_info = data.get("baseUserInfo")
             realname = base_info.get("realname") if isinstance(base_info, dict) else None
             year = base_info.get("year") if isinstance(base_info, dict) else None
             logger.info(f"用户 {userData['userName']} 登录成功")
-            return {"token": token, "realname": realname or "", "year": year or ""}
+            result = {"token": token, "realname": realname or "", "year": year or ""}
+            if isinstance(base_info, dict):
+                for field, source in (("college", "collegeName"), ("sex", "sex")):
+                    if base_info.get(source) not in (None, ""):
+                        result[field] = base_info[source]
+            return result
         raise PuApiError("登录成功，但 PU 没有返回 Token", "format")
     except requests.RequestException as exc:
         raise PuApiError("连接 PU 失败，请检查网络后重试", "network") from exc
 
 
-def get_token_or_raise(userData: Dict) -> str:
+def get_token_or_raise(userData: Dict, client: PuClient | None = None) -> str:
     """兼容旧调用方；需要姓名的界面请用 login。"""
-    return login(userData)["token"]
+    return login(userData, client=client)["token"]
 
 
 def get_token(userData: Dict) -> str | None:
@@ -111,16 +103,17 @@ def get_token(userData: Dict) -> str | None:
 def get_school_candidates(school_name: str) -> List[Dict]:
     """使用 PU 网页当前的学校列表接口返回完整候选，交给用户确认。"""
     try:
-        response = _get_with_retry("https://apis.pocketuni.net/uc/school/list",
-                                   HEADERS_GET_SCHOOL, label="获取学校列表")
-        schools = response_data(response).get("list")
+        schools = _get_api(PuClient.url("schools"), HEADERS_GET_SCHOOL).get("list")
     except requests.RequestException as exc:
         raise PuApiError("获取学校列表失败，请检查网络后重试", "network") from exc
     if not isinstance(schools, list):
         raise PuApiError("学校列表格式已变化", "format")
-    return [{"id": int(item["id"]), "name": item["name"]} for item in schools
-            if isinstance(item, dict) and school_name in item.get("name", "")
-            and item.get("id") is not None]
+    try:
+        return [{"id": int(item["id"]), "name": item["name"]} for item in schools
+                if isinstance(item, dict) and isinstance(item.get("name"), str)
+                and school_name in item["name"] and item.get("id") is not None]
+    except (ValueError, TypeError) as exc:
+        raise PuApiError("学校编号格式已变化", "format") from exc
 
 
 def get_sid(school_name: str) -> int | None:
@@ -136,9 +129,7 @@ def get_sid(school_name: str) -> int | None:
 def get_school_name(sid: int) -> str | None:
     """用 SID 反查学校名称；查不到返回 None。"""
     try:
-        response = _get_with_retry("https://apis.pocketuni.net/uc/school/list",
-                                   HEADERS_GET_SCHOOL, label="获取学校列表")
-        schools = response_data(response).get("list")
+        schools = _get_api(PuClient.url("schools"), HEADERS_GET_SCHOOL).get("list")
         if not isinstance(schools, list):
             return None
         for item in schools:
@@ -152,14 +143,13 @@ def get_school_name(sid: int) -> str | None:
 def get_activity_type(token: str, sid: str, strict: bool = False) -> List | None:
     """获取本学校的活动类型（参与年级、活动分类、归属院系）"""
     logger.info("开始获取本学校的活动类型")
-    type_url = "https://apis.pocketuni.net/apis/mapping/data"
+    type_url = PuClient.url("filters")
     payload = {"key": "eventFilter", "puType": 0}
-    headers = HEADERS_ACTIVITY.copy()
-    headers["Authorization"] = f"Bearer {token}:{sid}"
+    headers = PuClient.headers(HEADERS_ACTIVITY, token, sid)
     try:
         result = _post_api(type_url, headers, payload, label="获取活动类型")
         res = []
-        data = result.get("list", [])
+        data = result.get("list")
         if not isinstance(data, list):
             raise PuApiError("活动筛选条件格式已变化", "format")
         for d in data:
@@ -175,12 +165,11 @@ def get_activity_type(token: str, sid: str, strict: bool = False) -> List | None
 
 def get_info(activity_id: str, token: str, sid: str, strict: bool = False) -> Dict:
     """获得单个活动的详细信息"""
-    headers = HEADERS_ACTIVITY.copy()
-    headers["Authorization"] = f"Bearer {token}:{str(sid)}"
+    headers = PuClient.headers(HEADERS_ACTIVITY, token, sid)
     payload = {"id": int(activity_id)}
     try:
-        info = _post_api("https://apis.pocketuni.net/apis/activity/info", headers,
-                         payload, label=f"获取活动{activity_id}信息").get("baseInfo", {})
+        info = _post_api(PuClient.url("detail"), headers,
+                         payload, label=f"获取活动{activity_id}信息").get("baseInfo")
         if not isinstance(info, dict):
             raise PuApiError("活动详情格式已变化", "format")
         return info
@@ -194,6 +183,10 @@ def get_info(activity_id: str, token: str, sid: str, strict: bool = False) -> Di
 def get_single_activity(activity_id: str, info: Dict) -> Dict:
     """筛选获取单个活动的信息"""
     logger.info(f"正在解析活动 {activity_id} 的信息")
+    try:
+        remaining = max(0, int(info["allowUserCount"]) - int(info["joinUserCount"]))
+    except (KeyError, TypeError, ValueError):
+        remaining = None
     return {
         "activity_id": activity_id,
         "分数": info.get("credit"),
@@ -205,15 +198,15 @@ def get_single_activity(activity_id: str, info: Dict) -> Dict:
         "活动开始时间": info.get("startTime"),
         "活动结束时间": info.get("endTime"),
         "活动地址": info.get("address"),
-        "可报名人数": info.get("allowUserCount", 0) - info.get("joinUserCount", 0),
+        "可报名人数": remaining,
+        "参与要求": {key: info[key] for key in ("allowCollege", "allowYears", "allowTribe") if key in info},
     }
 
 
 def get_user_credit(token: str, sid: int, strict: bool = False) -> Dict:
     """获取用户学分信息"""
-    info_url = "https://apis.pocketuni.net/apis/user/pc-info"
-    headers = HEADERS_ACTIVITY.copy()
-    headers["Authorization"] = f"Bearer {token}:{str(sid)}"
+    info_url = PuClient.url("user")
+    headers = PuClient.headers(HEADERS_ACTIVITY, token, sid)
     try:
         return _post_api(info_url, headers, {}, label="获取用户学分")
     except Exception as e:
@@ -226,9 +219,8 @@ def get_user_credit(token: str, sid: int, strict: bool = False) -> Dict:
 def get_allowed_activity_list(user: Dict, strict: bool = False) -> List:
     """获取满足用户筛选条件的活动列表"""
     logger.info("开始获取满足用户筛选条件的活动")
-    activity_url = "https://apis.pocketuni.net/apis/activity/list"
-    headers = HEADERS_ACTIVITY.copy()
-    headers["Authorization"] = f"Bearer {user.get('token')}:{str(user.get('sid'))}"
+    activity_url = PuClient.url("activities")
+    headers = PuClient.headers(HEADERS_ACTIVITY, user.get("token"), user.get("sid"))
     payload = {
         "page": 1,
         "limit": 20,
@@ -277,17 +269,19 @@ def get_allowed_activity_list(user: Dict, strict: bool = False) -> List:
             else:
                 data = _post_api(activity_url, headers, payload,
                                  label=f"获取活动列表第{page}页")
-            items = data.get("list", [])
+            items = data.get("list")
             if not isinstance(items, list):
                 raise PuApiError("活动列表格式已变化", "format")
             for activity in items:
+                if not isinstance(activity, dict) or activity.get("id") is None:
+                    raise PuApiError("活动编号格式已变化", "format")
                 info = get_info(activity.get("id"), user.get("token"), user.get("sid"),
                                 strict=strict)
                 if not _is_valid(info, user.get("college", "")):
                     continue
-                activity_list.append(
-                    get_single_activity(activity.get("id"), info)
-                )
+                parsed = get_single_activity(activity.get("id"), info)
+                parsed["参与条件"] = participation_checks(info, user)
+                activity_list.append(parsed)
         except Exception as e:
             logger.error(f"获取第 {page} 页活动失败: {str(e)}")
             if strict:
@@ -295,20 +289,14 @@ def get_allowed_activity_list(user: Dict, strict: bool = False) -> List:
 
         time.sleep(0.5 + random.random() * 1.5)
 
-    logger.info(f"获取满足用户筛选条件的活动成功，共 {len(activity_list)} 个")
+    logger.info(f"获取候选活动成功，共 {len(activity_list)} 个；界面将继续核对当前账号的院系和年级")
     return activity_list
 
 
 def _is_valid(info: Dict, college: str) -> bool:
-    """判断当前活动是否满足用户筛选条件"""
-    if info.get("allowUserCount", 0) - info.get("joinUserCount", 0) <= 0:
-        return False
-    if info.get("allowTribe"):
-        return False
-    if info.get("statusName") != "未开始":
-        return False
-    if info.get("allowCollege") and college not in [
-        t.get("name") for t in info.get("allowCollege", [])
-    ]:
+    """保留尚未开始的活动；满员活动由界面展示并限制勾选。"""
+    if not isinstance(info.get("statusName"), str):
+        raise PuApiError("活动状态格式已变化，请核对接口", "format")
+    if info["statusName"] != "未开始":
         return False
     return True

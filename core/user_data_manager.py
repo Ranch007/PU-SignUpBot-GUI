@@ -5,6 +5,8 @@ from typing import Dict, List, Optional
 from core.crypto_utils import decrypt_password, protect_secret, unprotect_secret
 from core.atomic_json import read_json, write_json
 from loguru import logger
+from core.accounts import account_key
+from core.config import MAX_ACCOUNTS
 
 
 class UserDataManager:
@@ -41,8 +43,9 @@ class UserDataManager:
         if len(usernames) != len(data) or any(
                 not isinstance(name, str) or not name for name in usernames):
             raise ValueError("账号文件格式错误，请保留原文件与备份")
-        if len(usernames) != len(set(usernames)):
-            raise ValueError("账号文件存在重名学号，无法安全区分账号；请备份后删除重复记录再启动")
+        identities = [account_key(user) for user in data]
+        if len(identities) != len(set(identities)):
+            raise ValueError("账号文件存在同学校重名学号；请备份后删除重复记录再启动")
 
         for user in data:
             for field in ("password", "token"):
@@ -85,11 +88,11 @@ class UserDataManager:
         write_json(self.file_path, data_to_write)
 
     def add_user(self, user: Dict) -> bool:
-        if self.get_user(user.get("userName")) is not None:
+        if self.get_user(account_key(user)) is not None:
             logger.warning("同名账号已存在: {}", user.get("userName"))
             return False
-        if len(self.user_datas) >= 4:
-            logger.warning("用户数已达上限（4个）")
+        if len(self.user_datas) >= MAX_ACCOUNTS:
+            logger.warning("用户数已达上限（{}个）", MAX_ACCOUNTS)
             return False
         user.pop("email", None)
         self.user_datas.append(user)
@@ -97,29 +100,30 @@ class UserDataManager:
         return True
 
     def remove_user(self, username: str) -> bool:
-        for i, user in enumerate(self.user_datas):
-            if user.get("userName") == username:
-                self.user_datas.pop(i)
-                logger.info(f"用户已删除: {username}")
-                return True
-        logger.warning(f"未找到要删除的用户: {username}")
-        return False
+        user = self.get_user(username)
+        if user is None:
+            return False
+        self.user_datas.remove(user)
+        return True
 
     def update_user(self, username: str, updates: Dict) -> bool:
-        for user in self.user_datas:
-            if user.get("userName") == username:
-                updates.pop("email", None)
-                user.update(updates)
-                logger.info(f"用户已更新: {username}")
-                return True
-        logger.warning(f"未找到要更新的用户: {username}")
-        return False
+        user = self.get_user(username)
+        if user is None:
+            return False
+        clean = {key: value for key, value in updates.items() if key != "email"}
+        if account_key(dict(user, **clean)) != account_key(user):
+            raise ValueError("不能通过资料更新改变学校或学号")
+        user.update(clean)
+        return True
 
     def get_user(self, username: str) -> Optional[Dict]:
-        for user in self.user_datas:
-            if user.get("userName") == username:
-                return user
-        return None
+        if isinstance(username, tuple):
+            matches = [user for user in self.user_datas if account_key(user) == tuple(map(str, username))]
+        else:
+            matches = [user for user in self.user_datas if user.get("userName") == username]
+        if len(matches) > 1:
+            raise ValueError("学号对应多个学校，请使用学校和学号选择账号")
+        return matches[0] if matches else None
 
     # -------- settings.json 管理 --------
 

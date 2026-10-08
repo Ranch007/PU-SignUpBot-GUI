@@ -6,6 +6,8 @@ from typing import Callable
 
 from ui.styles import FONT_LG, FONT_MD, FONT_SM, PAD_LG, PAD_MD, PAD_SM, RADIUS, LIGHT_FRAME, DARK_FRAME
 from core.tools import get_school_candidates, login
+from core.config import MAX_ACCOUNTS
+from core.accounts import account_key
 
 
 class AddUserInline(ctk.CTkFrame):
@@ -54,25 +56,18 @@ class AddUserInline(ctk.CTkFrame):
                                                      text_color="gray")
                 else:
                     self.school_result.configure(text="未找到匹配学校", text_color="#e74c3c")
-            elif kind == "login" and self.step == 2:
+            elif kind == "profile" and self.step == 2:
                 self._save_btn.configure(state="normal")
                 if isinstance(result, Exception):
                     self._status.configure(text=f"登录失败：{result}", text_color="#e74c3c")
+                    self._save_btn.configure(text="重新验证")
                 else:
-                    self._data["token"] = result["token"]
-                    if result.get("realname"):
-                        self._data["realname"] = result["realname"]
-                    if result.get("year"):
-                        self._data["year"] = result["year"]
-                    if not self.user_manager.add_user(self._data):
-                        reason = ("此学号已添加，请在原账号上重新登录" if
-                                  self.user_manager.get_user(self._data["userName"]) else
-                                  "用户数已达上限（4个），请先删除旧用户")
-                        self._status.configure(text=reason, text_color="#e74c3c")
-                    else:
-                        self.user_manager.write_user_data()
-                        self._on_done()
-                        return
+                    self._data.update(result)
+                    for entry, field in ((self.college_entry, "college"), (self.year_entry, "year")):
+                        if result.get(field) and not entry.get().strip():
+                            entry.insert(0, str(result[field]))
+                    self._status.configure(text="登录已验证，请核对院系和年级后保存；未返回的资料可手动补充", text_color="gray")
+                    self._save_btn.configure(text="保存账号")
         self.after(100, self._poll_results)
 
     def _build_header(self):
@@ -144,9 +139,7 @@ class AddUserInline(ctk.CTkFrame):
         if not u or not p.strip():
             self._status.configure(text="请输入用户名和密码", text_color="#e74c3c")
             return
-        if self.user_manager.get_user(u):
-            self._status.configure(text="此学号已添加，请在原账号上重新登录", text_color="#e74c3c")
-            return
+        self._data.pop("token", None)
         self._data["userName"] = u
         self._data["password"] = p
         self._data["device"] = "pc"
@@ -211,14 +204,22 @@ class AddUserInline(ctk.CTkFrame):
         sid = self._schools.get(label)
         if sid is None:
             return
+        self._data.pop("token", None)
+        if self._data.get("sid") != sid:
+            for field in ("college", "year", "realname", "sex"):
+                self._data.pop(field, None)
         self._data["sid"] = sid
         self._data["school"] = label.rsplit(" (SID:", 1)[0]
         self.school_result.configure(text=f"已选择：{label}", text_color="#2ecc71")
         self.next2.configure(state="normal")
 
     def _s2_next(self):
+        if self.user_manager.get_user(account_key(self._data)):
+            self._status.configure(text="此学校的学号已添加，请在原账号上重新登录", text_color="#e74c3c")
+            return
         self.step = 2
         self._show_step()
+        self._verify_profile()
 
     def _step3(self):
         self.step_label.configure(text="步骤 3/3：补充信息")
@@ -226,8 +227,12 @@ class AddUserInline(ctk.CTkFrame):
         ctk.CTkLabel(self._form, text="院系全称", font=(ctk.CTkFont, FONT_MD)).pack(anchor="w", pady=(0, PAD_SM))
         self.college_entry = ctk.CTkEntry(self._form, placeholder_text="如：经济管理学院", height=36, font=(ctk.CTkFont, FONT_MD))
         self.college_entry.pack(fill="x", pady=(0, PAD_MD))
+        ctk.CTkLabel(self._form, text="年级（可选，与 PU 年级编号一致）", font=(ctk.CTkFont, FONT_MD)).pack(anchor="w")
+        self.year_entry = ctk.CTkEntry(self._form, height=36, placeholder_text="未返回时可补充")
+        self.year_entry.pack(fill="x", pady=(0, PAD_MD))
 
-        ctk.CTkLabel(self._form, text="请务必输入院系全称", font=(ctk.CTkFont, FONT_SM), text_color="gray").pack(anchor="w")
+
+        ctk.CTkLabel(self._form, text="PU 未返回的院系和年级可手动补充；请使用与 PU 一致的值", font=(ctk.CTkFont, FONT_SM), text_color="gray").pack(anchor="w")
 
         ctk.CTkButton(self._btn_frame, text="上一步", height=34, fg_color="gray", font=(ctk.CTkFont, FONT_MD), command=lambda: self._go(1)).pack(side="left")
         self._save_btn = ctk.CTkButton(self._btn_frame, text="验证并保存", height=34,
@@ -236,24 +241,39 @@ class AddUserInline(ctk.CTkFrame):
         self._save_btn.pack(side="right")
 
     def _s3_save(self):
+        if not self._data.get("token"):
+            self._verify_profile()
+            return
         college = self.college_entry.get().strip()
         if not college:
-            self._status.configure(text="请输入院系名称", text_color="#e74c3c")
+            self._status.configure(text="PU 未返回院系，请补充院系全称", text_color="#e74c3c")
             return
         self._data["college"] = college
-        self._status.configure(text="正在验证登录...", text_color="gray")
+        if self.year_entry.get().strip():
+            self._data["year"] = self.year_entry.get().strip()
+        if not self.user_manager.add_user(dict(self._data)):
+            self._status.configure(text=f"此学校的学号已添加，或账号数已达 {MAX_ACCOUNTS} 个上限", text_color="#e74c3c")
+            return
+        try:
+            self.user_manager.write_user_data()
+        except OSError as exc:
+            self.user_manager.remove_user(account_key(self._data))
+            self._status.configure(text=f"保存失败：{exc}", text_color="#e74c3c")
+            return
+        self._on_done()
+
+    def _verify_profile(self):
+        self._status.configure(text="正在验证登录并读取资料...", text_color="gray")
         self._save_btn.configure(state="disabled")
         self._generation += 1
         generation = self._generation
         data = dict(self._data)
-
         def run():
             try:
                 result = login(data)
             except Exception as exc:
                 result = exc
-            self._results.put(("login", generation, result))
-
+            self._results.put(("profile", generation, result))
         threading.Thread(target=run, daemon=True).start()
 
     def _go(self, target: int):

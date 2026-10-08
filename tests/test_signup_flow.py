@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 from unittest.mock import patch
 
 from core.activity_bot import ActivityBot
+from core.activity_plan import activity_is_full, visible_activities
 from core.pu_api import PuApiError, response_data
 from core.signup_tasks import SignupTasks
 from core.tools import (get_allowed_activity_list, get_school_candidates,
@@ -185,6 +186,30 @@ class SignupFlowTests(unittest.TestCase):
             result = get_allowed_activity_list({"token": "token", "sid": 1}, strict=True)
         self.assertEqual([item["id"] for item in result], [1, 2, 3])
         self.assertEqual(post.call_count, 3)
+
+    def test_full_eligible_activities_are_returned_but_mismatches_are_hidden(self):
+        base = {"name": "模拟活动", "statusName": "未开始", "allowUserCount": 10,
+                "joinUserCount": 10, "allowCollege": [{"name": "法学院"}],
+                "allowYears": [{"id": 25}]}
+        details = {1: dict(base), 2: dict(base, joinUserCount=12),
+                   3: dict(base, joinUserCount=2), 4: dict(base, statusName="已结束"),
+                   5: dict(base, allowCollege=[{"name": "设计学院"}]),
+                   6: dict(base, allowUserCount=None)}
+        user = {"token": "mock", "sid": 1, "college": "法学院", "year": 25}
+        with patch("core.tools._post_api", return_value={
+                "pageInfo": {"total": 1}, "list": [{"id": aid} for aid in details]}), \
+             patch("core.tools.get_info", side_effect=lambda aid, *args, **kw: details[aid]), \
+             patch("core.tools.time.sleep"):
+            activities = get_allowed_activity_list(user, strict=True)
+        shown = visible_activities(activities, user=user)
+        self.assertEqual({a["activity_id"] for a in shown}, {1, 2, 3, 6})
+        by_id = {a["activity_id"]: a for a in shown}
+        self.assertTrue(activity_is_full(by_id[1]))
+        self.assertTrue(activity_is_full(by_id[2]))
+        self.assertEqual(by_id[2]["可报名人数"], 0)
+        self.assertFalse(activity_is_full(by_id[3]))
+        self.assertFalse(activity_is_full(by_id[6]))
+        self.assertIsNone(by_id[6]["可报名人数"])
 
     def test_waiting_for_distant_activity_can_be_cancelled(self):
         cancel = threading.Event()

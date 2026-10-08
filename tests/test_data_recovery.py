@@ -101,19 +101,19 @@ class DataRecoveryTests(unittest.TestCase):
                 path, os.path.join(directory, "settings.json")).user_datas[0]["token"],
                 "private-token")
 
-    def test_duplicate_username_is_rejected(self):
+    def test_duplicate_username_in_same_school_is_rejected(self):
         with tempfile.TemporaryDirectory() as directory:
             manager = UserDataManager(os.path.join(directory, "users.json"),
                                       os.path.join(directory, "settings.json"))
             self.assertTrue(manager.add_user({"userName": "student", "sid": 1}))
-            self.assertFalse(manager.add_user({"userName": "student", "sid": 2}))
+            self.assertFalse(manager.add_user({"userName": "student", "sid": 1}))
             self.assertEqual(len(manager.user_datas), 1)
 
     def test_legacy_duplicate_username_is_not_silently_used(self):
         with tempfile.TemporaryDirectory() as directory:
             path = os.path.join(directory, "users.json")
             original = [{"userName": "student", "sid": 1},
-                        {"userName": "student", "sid": 2}]
+                        {"userName": "student", "sid": 1}]
             write_json(path, original)
             with self.assertRaisesRegex(ValueError, "重名学号"):
                 UserDataManager(path, os.path.join(directory, "settings.json"))

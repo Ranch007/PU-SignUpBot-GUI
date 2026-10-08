@@ -1,6 +1,6 @@
 [project]
 name = "pu-signupbot"
-version = "1.0.0"
+version = "1.1.0"
 description = "PU 口袋校园报名助手 GUI"
 license = "GPL-3.0-or-later"
 requires-python = ">=3.11"

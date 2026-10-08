@@ -4,6 +4,7 @@ from datetime import datetime
 
 from core.activity_plan import parse_activity_time
 from core.tools import get_info, get_user_credit, get_single_activity
+from core.participation import participation_checks
 
 
 class RestoreError(Exception):
@@ -15,6 +16,9 @@ def validate_restore(user: dict, activity_id: str) -> dict:
         raise RestoreError("请先重新登录，再恢复任务")
     get_user_credit(user["token"], user["sid"], strict=True)
     info = get_info(activity_id, user["token"], user["sid"], strict=True)
+    mismatches = [check["message"] for check in participation_checks(info, user) if check["status"] == "mismatch"]
+    if mismatches:
+        raise RestoreError("；".join(mismatches))
     if info.get("statusName") != "未开始":
         raise RestoreError(f"活动状态为“{info.get('statusName') or '未知'}”，请核实后重新选择")
     start = parse_activity_time(info.get("joinStartTime"))

@@ -3,10 +3,13 @@ from typing import Dict, List, Callable
 import threading
 from queue import Empty, Queue
 import customtkinter as ctk
+from loguru import logger
 
 from ui.styles import FONT_LG, FONT_MD, FONT_SM, PAD_LG, PAD_MD, PAD_SM, PAD_XS, RADIUS, LIGHT_FRAME, DARK_FRAME
 from core.tools import get_activity_type, get_allowed_activity_list
-from core.activity_plan import visible_activities, overlapping_activities
+from core.activity_plan import activity_is_full, visible_activities, overlapping_activities, selectable_activity_ids
+from core.activity_filters import default_year_filter_ids
+from core.participation import activity_participation_checks, participation_text
 
 
 class ActivitySelectInline(ctk.CTkFrame):
@@ -25,6 +28,7 @@ class ActivitySelectInline(ctk.CTkFrame):
         self._filter_widgets: Dict[str, list] = {}
         self._results = Queue()
         self._fetch_generation = 0
+        self._fetching = False
         self._active = True
 
         self._build()
@@ -40,15 +44,25 @@ class ActivitySelectInline(ctk.CTkFrame):
         bar = ctk.CTkFrame(self, fg_color="transparent")
         bar.pack(fill="x", padx=PAD_LG, pady=(PAD_LG, PAD_MD))
 
-        ctk.CTkLabel(bar, text=f"选择活动 — {self._username}", font=(ctk.CTkFont, FONT_LG, "bold")).pack(side="left")
-        ctk.CTkLabel(bar, text="同级 OR，跨级 AND", font=(ctk.CTkFont, FONT_SM), text_color="gray").pack(side="left", padx=PAD_MD)
-
-        self._save_btn = ctk.CTkButton(bar, text="保存选择", height=32, state="disabled",
+        actions = ctk.CTkFrame(bar, fg_color="transparent")
+        actions.pack(side="right")
+        self._save_btn = ctk.CTkButton(actions, text="保存选择", height=32, state="disabled",
                                        fg_color="#2e8b57", hover_color="#1e6b3a",
                                        font=(ctk.CTkFont, FONT_SM), command=self._on_save)
-        self._save_btn.pack(side="right", padx=(0, PAD_SM))
+        self._save_btn.pack(side="right")
 
-        ctk.CTkButton(bar, text="关闭", fg_color="gray", width=60, height=30, font=(ctk.CTkFont, FONT_SM), command=self._on_close).pack(side="right")
+        self._close_btn = ctk.CTkButton(actions, text="关闭", fg_color="gray", width=60, height=32,
+                                       font=(ctk.CTkFont, FONT_SM), command=self._on_close)
+        self._close_btn.pack(side="right", padx=(0, PAD_MD))
+        self._refresh_btn = ctk.CTkButton(actions, text="刷新", width=64, height=32, state="disabled",
+                                         font=(ctk.CTkFont, FONT_SM), command=self._refresh)
+        self._refresh_btn.pack(side="right", padx=(0, PAD_MD))
+        self._select_all_btn = ctk.CTkButton(actions, text="一键全选", width=96, height=32, state="disabled",
+                                            font=(ctk.CTkFont, FONT_SM), command=self._select_all)
+        self._select_all_btn.pack(side="right", padx=(0, PAD_MD))
+
+        ctk.CTkLabel(bar, text=f"选择活动 — {self.user_manager.get_user(self._username).get('userName')}", font=(ctk.CTkFont, FONT_LG, "bold")).pack(side="left")
+        ctk.CTkLabel(bar, text="同级 OR，跨级 AND", font=(ctk.CTkFont, FONT_SM), text_color="gray").pack(side="left", padx=PAD_MD)
 
         # 主体
         main = ctk.CTkFrame(self, fg_color="transparent")
@@ -84,13 +98,15 @@ class ActivitySelectInline(ctk.CTkFrame):
         info = ctk.CTkFrame(self._filter_scroll, fg_color="transparent")
         info.pack(fill="x", padx=PAD_MD, pady=(PAD_MD, PAD_SM))
         ctk.CTkLabel(info, text=f"院系：{user.get('college', '未知')}", font=(ctk.CTkFont, FONT_SM), text_color="gray").pack(anchor="w")
+        ctk.CTkLabel(info, text=f"年级：{user.get('year') or '未填写，请补充账号资料'}",
+                     font=(ctk.CTkFont, FONT_SM), text_color="gray").pack(anchor="w")
 
         sep = ctk.CTkFrame(self._filter_scroll, height=2, fg_color=("gray80", "gray30"))
         sep.pack(fill="x", padx=PAD_MD, pady=PAD_MD)
 
         ctk.CTkLabel(self._filter_scroll, text="筛选条件", font=(ctk.CTkFont, FONT_MD, "bold")).pack(anchor="w", padx=PAD_MD, pady=(0, PAD_MD))
         self._fetch_btn = ctk.CTkButton(self._filter_scroll, text="获取活动", height=32,
-                                        font=(ctk.CTkFont, FONT_SM), command=lambda: self._fetch(user))
+                                        state="disabled", font=(ctk.CTkFont, FONT_SM), command=self._refresh)
         self._fetch_btn.pack(fill="x", padx=PAD_MD, pady=(0, PAD_MD))
         self._count_label.configure(text="正在加载筛选条件...", text_color="gray")
 
@@ -112,6 +128,8 @@ class ActivitySelectInline(ctk.CTkFrame):
             except Empty:
                 break
             if kind == "filters":
+                self._fetch_btn.configure(state="normal")
+                self._refresh_btn.configure(state="normal")
                 if isinstance(result, Exception):
                     self._count_label.configure(text=f"筛选条件加载失败：{result}", text_color="#e74c3c")
                 elif result:
@@ -120,8 +138,11 @@ class ActivitySelectInline(ctk.CTkFrame):
                 else:
                     self._count_label.configure(text="暂无筛选条件，可以直接获取活动", text_color="gray")
             elif kind == "activities" and generation == self._fetch_generation:
+                self._fetching = False
                 self._fetch_btn.configure(state="normal")
+                self._refresh_btn.configure(state="normal", text="刷新")
                 if isinstance(result, Exception):
+                    self._save_btn.configure(state="normal" if self._selected else "disabled")
                     self._count_label.configure(text=f"活动加载失败：{result}", text_color="#e74c3c")
                 else:
                     self._save_btn.configure(state="normal")
@@ -140,18 +161,41 @@ class ActivitySelectInline(ctk.CTkFrame):
             section.pack(fill="x", padx=PAD_MD, pady=PAD_XS)
             ctk.CTkLabel(section, text=at.get("name", ""), font=(ctk.CTkFont, FONT_SM, "bold")).pack(anchor="w", padx=PAD_SM, pady=(PAD_SM, 1))
 
+            options = at.get("infoList", [])
+            if key == "allowYears":
+                defaults = default_year_filter_ids(user, options)
+                hint = "默认勾选当前账号年级，可手动调整" if defaults else "年级未能对应，请补充资料或手动选择"
+                ctk.CTkLabel(section, text=hint, font=(ctk.CTkFont, FONT_SM),
+                             text_color="gray", wraplength=210, justify="left").pack(anchor="w", padx=PAD_SM)
+            else:
+                defaults = {str(value) for value in user.get(key, [])}
             self._filter_widgets[key] = []
-            for info in at.get("infoList", []):
+            for info in options:
                 iid = str(info.get("id"))
-                var = ctk.BooleanVar(value=(key == "allowYears") or (iid in user.get(key, [])))
+                var = ctk.BooleanVar(value=iid in defaults)
                 ctk.CTkCheckBox(section, text=info.get("name", iid), font=(ctk.CTkFont, FONT_SM), variable=var).pack(anchor="w", padx=PAD_SM, pady=1)
                 self._filter_widgets[key].append((iid, var))
 
+    def _refresh(self):
+        user = self.user_manager.get_user(self._username)
+        if not user or not user.get("token"):
+            self._warning_label.configure(text="当前账号未登录，请先检查账号状态。")
+            return
+        self._fetch(user)
+
     def _fetch(self, user: Dict):
+        if self._fetching or not self._active:
+            return
+        self._fetching = True
         self._count_label.configure(text="加载中...", text_color="gray")
         self._clear_list()
         self._activities = []
         self._fetch_btn.configure(state="disabled")
+        self._refresh_btn.configure(state="disabled", text="刷新中…")
+        self._select_all_btn.configure(state="disabled")
+        self._save_btn.configure(state="disabled", text="保存选择")
+        self._overlap_confirmed = False
+        self._warning_label.configure(text="")
 
         for key, widgets in self._filter_widgets.items():
             selected = [iid for iid, var in widgets if var.get()]
@@ -162,10 +206,11 @@ class ActivitySelectInline(ctk.CTkFrame):
 
         self._fetch_generation += 1
         generation = self._fetch_generation
+        request_user = dict(user)
 
         def _run():
             try:
-                result = get_allowed_activity_list(dict(user), strict=True)
+                result = get_allowed_activity_list(request_user, strict=True)
             except Exception as exc:
                 result = exc
             self._results.put(("activities", generation, result, None))
@@ -178,29 +223,49 @@ class ActivitySelectInline(ctk.CTkFrame):
             aid = str(a.get("activity_id"))
             self._details[aid] = a
         self._render_list()
+        logger.info("活动显示结果：{}", self._count_label.cget("text"))
+        user = self.user_manager.get_user(self._username) or {}
+        for activity in activities:
+            if str(activity.get("activity_id")) in self._selected:
+                continue
+            reasons = [check["message"] for check in activity_participation_checks(activity, user)
+                       if check["status"] == "mismatch"]
+            if reasons:
+                logger.info("已隐藏活动 {}（{}）：{}", activity.get("activity_id"),
+                            activity.get("活动名称") or "未命名活动", "；".join(reasons))
 
     def _render_list(self):
         self._clear_list()
-        shown = visible_activities(self._activities, self._search.get(), self._sort.get())
+        user = self.user_manager.get_user(self._username) or {}
+        eligible = visible_activities(self._activities, user=user, selected=self._selected)
+        shown = visible_activities(self._activities, self._search.get(), self._sort.get(),
+                                   user=user, selected=self._selected)
         for a in shown:
             aid = str(a.get("activity_id"))
 
             row = ctk.CTkFrame(self._list_scroll, corner_radius=6)
             row.pack(fill="x", padx=PAD_SM, pady=2)
 
+            checks = activity_participation_checks(a, user)
+            blocked = any(check["status"] == "mismatch" for check in checks)
+            full = activity_is_full(a)
             var = ctk.BooleanVar(value=aid in self._selected)
-            ctk.CTkCheckBox(row, text="", width=20, variable=var, command=lambda a=aid, v=var: self._toggle(a, v.get())).pack(side="left", padx=PAD_SM)
+            ctk.CTkCheckBox(row, text="", width=20, variable=var, state="disabled" if (blocked or full) and aid not in self._selected else "normal", command=lambda a=aid, v=var: self._toggle(a, v.get())).pack(side="left", padx=PAD_SM)
 
             body = ctk.CTkFrame(row, fg_color="transparent")
             body.pack(side="left", fill="x", expand=True, padx=PAD_SM, pady=PAD_SM)
             title = a.get('活动名称') or '未命名活动'
+            if blocked:
+                title += " · 已选但条件不匹配，取消后隐藏"
             ctk.CTkLabel(body, text=title, font=(ctk.CTkFont, FONT_MD, "bold"),
                          anchor="w", justify="left", wraplength=460).pack(fill="x")
+            places = ("已满员 · 可取消选择" if aid in self._selected else "已满员 · 不可勾选") if full else (
+                f"剩余 {a.get('可报名人数') if a.get('可报名人数') is not None else '待确认'} 名")
             ctk.CTkLabel(body,
-                         text=f"{a.get('分数') or 0} 分  ·  剩余 {a.get('可报名人数', '-')} 名",
+                         text=f"{a.get('分数') or 0} 分  ·  {places}",
                          font=(ctk.CTkFont, FONT_SM),
-                         text_color=("#245b82", "#89c8f0"), anchor="w").pack(fill="x")
-            summary = (f"报名：{a.get('开始报名时间') or '待确认'}\n"
+                         text_color=("#9a5b16", "#edb76d") if full else ("#245b82", "#89c8f0"), anchor="w").pack(fill="x")
+            summary = (f"报名：{a.get('开始报名时间') or '待确认'}  ·  截止：{a.get('报名截止时间') or '待确认'}\n"
                        f"活动：{a.get('活动开始时间') or '待确认'}")
             ctk.CTkLabel(body, text=summary, font=(ctk.CTkFont, FONT_SM),
                          text_color=("#55514d", "#c1c1c1"),
@@ -208,7 +273,7 @@ class ActivitySelectInline(ctk.CTkFrame):
             detail = ctk.CTkLabel(body, text=(
                 f"地点：{a.get('活动地址') or '待确认'}  |  {a.get('活动分类') or '分类未知'}  |  "
                 f"{a.get('举办组织') or '组织未知'}  |  结束：{a.get('活动结束时间') or '待确认'}\n"
-                "其他参与条件请在 PU 活动详情中核对"),
+                + participation_text(checks)),
                 font=(ctk.CTkFont, FONT_SM),
                 text_color=("#55514d", "#c1c1c1"), anchor="w", justify="left",
                 wraplength=460)
@@ -216,19 +281,38 @@ class ActivitySelectInline(ctk.CTkFrame):
                           command=lambda d=detail: d.pack_forget() if d.winfo_manager() else d.pack(fill="x"))\
                 .pack(side="right", padx=PAD_SM)
 
-        self._count_label.configure(text=f"显示 {len(shown)}/{len(self._activities)} 个活动  ·  已选 {len(self._selected)} 个",
+        self._count_label.configure(text=f"显示 {len(shown)}/{len(self._activities)} 个活动"
+                                    f"  ·  条件隐藏 {len(self._activities) - len(eligible)}"
+                                    f"  ·  搜索隐藏 {len(eligible) - len(shown)}"
+                                    f"  ·  已选 {len(self._selected)} 个",
                                     text_color="gray")
+        can_select = selectable_activity_ids(self._activities, user, self._search.get())
+        self._select_all_btn.configure(state="normal" if can_select and not self._fetching else "disabled")
+
+    def _select_all(self):
+        if self._fetching or not self._active:
+            return
+        user = self.user_manager.get_user(self._username) or {}
+        candidates = selectable_activity_ids(self._activities, user, self._search.get())
+        added = len(candidates - self._selected)
+        self._selected.update(candidates)
+        self._overlap_confirmed = False
+        self._save_btn.configure(text="保存选择")
+        self._render_list()
+        self._warning_label.configure(text=f"已全选当前结果中 {len(candidates)} 个可选活动（新增 {added} 个）。请点击保存选择。")
 
     def _toggle(self, aid: str, checked: bool):
         self._overlap_confirmed = False
         self._warning_label.configure(text="")
         self._save_btn.configure(text="保存选择")
         if checked:
-            self._selected.add(aid)
+            if activity_is_full(self._details.get(aid) or {}):
+                self._warning_label.configure(text="该活动已满员，不能勾选；可重新获取活动查看最新名额。")
+            else:
+                self._selected.add(aid)
         else:
             self._selected.discard(aid)
-        shown = visible_activities(self._activities, self._search.get(), self._sort.get())
-        self._count_label.configure(text=f"显示 {len(shown)}/{len(self._activities)} 个活动  ·  已选 {len(self._selected)} 个")
+        self._render_list()
 
     def _on_save(self):
         overlaps = overlapping_activities(self._details, self._selected)
@@ -241,12 +325,16 @@ class ActivitySelectInline(ctk.CTkFrame):
         details = {aid: self._details[aid] for aid in selected if aid in self._details}
         self.user_manager.update_user(self._username, {"activity_ids": selected,
                                                         "activity_details": details})
-        self.user_manager.write_user_data()
+        try:
+            self.user_manager.write_user_data()
+        except OSError as exc:
+            self._warning_label.configure(text=f"保存失败：{exc}")
+            return
         if self.task_manager:
             user = self.user_manager.get_user(self._username)
-            self.task_manager.cancel_unselected(user.get("sid"), self._username, self._selected)
+            self.task_manager.cancel_unselected(user.get("sid"), user.get("userName"), self._selected)
         self._save_btn.configure(text="已保存 ✓", fg_color="#27ae60")
-        self.after(800, self._on_close)
+        self.after(800, lambda: self._on_close() if self._active else None)
 
     def _clear_filter(self):
         for w in self._filter_scroll.winfo_children():

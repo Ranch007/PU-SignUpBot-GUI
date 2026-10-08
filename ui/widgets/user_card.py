@@ -4,6 +4,7 @@ from queue import Empty, Queue
 from typing import Callable, Dict, List
 import customtkinter as ctk
 from core.activity_plan import parse_activity_time
+from core.accounts import account_key, credential_snapshot, credentials_match
 from ui.styles import FONT_SM, FONT_MD, PAD_MD, PAD_SM, RADIUS, LIGHT_BORDER, DARK_BORDER, LIGHT_FRAME, DARK_FRAME
 
 
@@ -104,7 +105,7 @@ class UserCard(ctk.CTkFrame):
             width=64,
             height=30,
             font=(ctk.CTkFont, FONT_SM),
-            command=lambda: on_delete(user.get("userName")),
+            command=lambda: on_delete(account_key(user)),
         ).pack(side="left", padx=(0, 4))
 
         ctk.CTkButton(
@@ -113,7 +114,7 @@ class UserCard(ctk.CTkFrame):
             width=70,
             height=30,
             font=(ctk.CTkFont, FONT_SM),
-            command=lambda: on_select_activity(user.get("userName")),
+            command=lambda: on_select_activity(account_key(user)),
         ).pack(side="left")
 
         ctk.CTkButton(
@@ -122,7 +123,7 @@ class UserCard(ctk.CTkFrame):
             width=78,
             height=30,
             font=(ctk.CTkFont, FONT_SM),
-            command=lambda: on_relogin(user.get("userName")),
+            command=lambda: on_relogin(account_key(user)),
         ).pack(side="left", padx=(4, 0))
 
         # ========== 右板块 ==========
@@ -148,7 +149,7 @@ class UserCard(ctk.CTkFrame):
             width=76,
             height=26,
             font=(ctk.CTkFont, FONT_MD),
-            command=lambda: on_clear_activities(user.get("userName")),
+            command=lambda: on_clear_activities(account_key(user)),
             state="normal" if activity_ids else "disabled",
         )
         self.clear_btn.pack(side="right")
@@ -186,15 +187,18 @@ class UserCard(ctk.CTkFrame):
         self._show_activity_placeholder("加载中...")
         self._detail_generation += 1
         generation = self._detail_generation
+        snapshot = credential_snapshot(self.user)
+        user_data = dict(self.user)
 
         def _run():
             from core.tools import get_info
-            token = self.user.get("token", "")
-            sid = str(self.user.get("sid", ""))
+            token = user_data.get("token", "")
+            sid = str(user_data.get("sid", ""))
             activities = []
+            errors = []
             for aid in activity_ids:
-                info = get_info(str(aid), token, sid)
-                if info:
+                try:
+                    info = get_info(str(aid), token, sid, strict=True)
                     activities.append({
                         "name": info.get("name", str(aid)),
                         "credit": info.get("credit", 0),
@@ -203,18 +207,30 @@ class UserCard(ctk.CTkFrame):
                         "joinEndTime": info.get("joinEndTime", ""),
                         "endTime": info.get("endTime", ""),
                     })
-            self._detail_results.put((generation, activities))
+                except Exception as exc:
+                    errors.append(f"活动 {aid}：{exc}")
+            self._detail_results.put((generation, snapshot, activities, errors))
 
         threading.Thread(target=_run, daemon=True).start()
 
     def _poll_details(self):
         while True:
             try:
-                generation, activities = self._detail_results.get_nowait()
+                generation, snapshot, activities, errors = self._detail_results.get_nowait()
             except Empty:
                 break
-            if generation == self._detail_generation:
-                self._populate_activities(activities)
+            if generation == self._detail_generation and credentials_match(self.user, snapshot):
+                if activities:
+                    self._populate_activities(activities)
+                else:
+                    self._show_activity_placeholder("详情加载失败，请刷新或重新登录" if errors else "暂无已选活动")
+                if errors:
+                    label = ctk.CTkLabel(self.activity_scroll, text="；".join(errors),
+                                        font=(ctk.CTkFont, FONT_SM), text_color="#c0392b",
+                                        wraplength=500, justify="left")
+                    label.grid(row=len(activities) * 2 + 1, column=0, columnspan=4, sticky="w")
+                    self._activity_rows.append(label)
+                self.activity_count_label.configure(text=f"已选活动: {len(self.user.get('activity_ids', []))}")
         self._detail_poll_id = self.after(100, self._poll_details)
 
     def destroy(self):

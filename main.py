@@ -22,6 +22,7 @@ def setup_logging(directory: Path):
         retention="7 days",
         compression="zip",
         enqueue=True,
+        diagnose=False,
         encoding="utf-8",
         filter=lambda rec: rec["level"].no >= 30,
     )
@@ -35,6 +36,7 @@ def setup_logging(directory: Path):
                 "<level>{message}</level>"
             ),
             level="INFO",
+            diagnose=False,
         )
 
 

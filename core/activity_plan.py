@@ -1,6 +1,7 @@
 """活动选择和首页计划使用的纯数据处理。"""
 
-from datetime import datetime
+from datetime import datetime, timedelta
+from core.participation import activity_participation_checks
 
 
 def parse_activity_time(value):
@@ -20,9 +21,22 @@ def parse_activity_time(value):
         return None
 
 
-def visible_activities(activities, query="", sort_by="报名时间"):
+def activity_is_full(activity):
+    """只把明确的零或负数剩余名额判定为满员。"""
+    try:
+        return int(activity.get("可报名人数")) <= 0
+    except (TypeError, ValueError):
+        return False
+
+
+def visible_activities(activities, query="", sort_by="报名时间", *, user=None, selected=()):
     query = query.strip().casefold()
     visible = [a for a in activities if query in str(a.get("活动名称") or "").casefold()]
+    if user is not None:
+        selected = {str(aid) for aid in selected}
+        visible = [a for a in visible if str(a.get("activity_id")) in selected or
+                   not any(check["status"] == "mismatch"
+                           for check in activity_participation_checks(a, user))]
     if sort_by == "活动时间":
         return sorted(visible, key=lambda a: (parse_activity_time(a.get("活动开始时间")) or datetime.max,
                                                str(a.get("activity_id"))))
@@ -39,16 +53,30 @@ def _score(value):
         return 0
 
 
-def upcoming_signups(users, now=None):
+def selectable_activity_ids(activities, user, query=""):
+    """全选当前搜索结果；满员及明确条件未通过核对的活动交由用户处理。"""
+    return {str(activity["activity_id"])
+            for activity in visible_activities(activities, query, user=user)
+            if not activity_is_full(activity)
+            and not any(check["status"] != "matched" and check.get("condition") != "其他"
+                        for check in activity_participation_checks(activity, user))}
+
+
+def upcoming_signups(users, now=None, tasks=()):
     """所有未来且报名时间已知的场次（跨账号），按报名时间升序。"""
     now = now or datetime.now()
     candidates = []
+    task_map = {event.task_id: event for event in tasks}
     for user in users:
         details = user.get("activity_details") or {}
         for aid in user.get("activity_ids", []):
             info = details.get(str(aid)) or {}
-            start = parse_activity_time(info.get("开始报名时间"))
-            if start and start >= now:
+            task = task_map.get(f"{user.get('sid')}:{user.get('userName')}:{aid}")
+            if task and task.state in {"success", "failed", "cancelled"}:
+                continue
+            start = parse_activity_time(task.join_start_time if task and task.join_start_time else info.get("开始报名时间"))
+            clock = now + timedelta(seconds=task.server_offset if task else 0)
+            if start and start >= clock:
                 candidates.append((start, user.get("userName", ""), str(aid), info))
     candidates.sort(key=lambda item: (item[0], item[1], item[2]))
     return candidates

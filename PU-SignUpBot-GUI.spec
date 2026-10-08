@@ -29,6 +29,7 @@ exe = EXE(
     [],
     exclude_binaries=True,
     name='PU-SignUpBot-GUI',
+    version='version_info.txt',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
