@@ -231,12 +231,12 @@ PU 的接口和规则可能变化，请遵守学校及平台规定；程序无�
 
 | 头像                                              | 贡献者                                               | 致谢       |
 | ------------------------------------------------- | ---------------------------------------------------- | ---------- |
-| <a href="https://github.com/RedForestLonvor"></a> | [RedForestLonvor](https://github.com/RedForestLonvor) | 原创作者   |
-| <a href="https://github.com/yiqjffeng"></a>       | [yiqjffeng](https://github.com/yiqjffeng)             | 项目贡献者 |
-| <a href="https://github.com/DGYJ-fufu"></a>       | [DGYJ-fufu](https://github.com/DGYJ-fufu)             | 项目贡献者 |
-| <a href="https://github.com/later-we"></a>        | [later-we](https://github.com/later-we)               | 项目贡献者 |
-| <a href="https://github.com/Mhenwa"></a>          | [Mhenwa](https://github.com/Mhenwa)                   | 项目贡献者 |
-| <a href="https://github.com/Ranch007"></a>        | [Ranch007](https://github.com/Ranch007)               | 项目贡献者 |
+| <a href="https://github.com/RedForestLonvor"><img src="https://github.com/RedForestLonvor.png?size=96" alt="RedForestLonvor" width="48" height="48" /></a> | [RedForestLonvor](https://github.com/RedForestLonvor) | 原创作者   |
+| <a href="https://github.com/yiqjffeng"><img src="https://github.com/yiqjffeng.png?size=96" alt="yiqjffeng" width="48" height="48" /></a> | [yiqjffeng](https://github.com/yiqjffeng)             | 项目贡献者 |
+| <a href="https://github.com/DGYJ-fufu"><img src="https://github.com/DGYJ-fufu.png?size=96" alt="DGYJ-fufu" width="48" height="48" /></a> | [DGYJ-fufu](https://github.com/DGYJ-fufu)             | 项目贡献者 |
+| <a href="https://github.com/later-we"><img src="https://github.com/later-we.png?size=96" alt="later-we" width="48" height="48" /></a> | [later-we](https://github.com/later-we)               | 项目贡献者 |
+| <a href="https://github.com/Mhenwa"><img src="https://github.com/Mhenwa.png?size=96" alt="Mhenwa" width="48" height="48" /></a> | [Mhenwa](https://github.com/Mhenwa)                   | 项目贡献者 |
+| <a href="https://github.com/Ranch007"><img src="https://github.com/Ranch007.png?size=96" alt="Ranch007" width="48" height="48" /></a> | [Ranch007](https://github.com/Ranch007)               | 项目贡献者 |
 
 ## 📄 许可证
 
