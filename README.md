@@ -1,16 +1,35 @@
+<div align="center">
+
+<p align="center">
+  <img src="image/README/pu-signupbot-banner.png" alt="PU-SignUpBot-GUI" width="100%">
+</p>
+
 # PU-SignUpBot-GUI
 
 PU 校园活动自动报名助手 —— 带图形界面的桌面应用，双击即用。
 
+<p align="center">
+  <img src="https://img.shields.io/badge/Python-3.11%2B-blue.svg" alt="Python 3.11+" />
+  <img src="https://img.shields.io/badge/GUI-CustomTkinter-green.svg" alt="GUI: CustomTkinter" />
+  <img src="https://img.shields.io/badge/License-GPL--3.0--or--later-yellow.svg" alt="License: GPL-3.0-or-later" />
+  <img src="https://img.shields.io/badge/Platform-Windows-lightgrey.svg" alt="Platform: Windows" />
+</p>
+
 当前版本：**v1.1**。
 
-## 缘起
+[快速开始（EXE 用户）](#-快速开始exe-用户) · [使用教程](#-使用教程) · [常见问题](#-常见问题) · [界面布局](#-界面布局)
+
+</div>
+
+---
+
+## 📖 缘起
 
 本项目受 [_RedForest_](https://github.com/RedForestLonvor) 开发的 [PU-SignUpBot](https://github.com/RedForestLonvor/PU-SignUpBot) 启发。原项目功能完善，但为命令行（CLI）版本，非计算机专业的同学操作门槛较高——需要手动敲命令、编辑 JSON 配置文件，稍有不慎就容易出错。
 
 本次重构将其改造为带图形界面（GUI）的桌面应用，使用 [CustomTkinter](https://github.com/TomSchimansky/CustomTkinter) 构建，目标是让不熟悉命令行的同学也能轻松使用：**双击打开、点选活动、一键报名**。
 
-## 功能特性
+## ✨ 功能特性
 
 - **图形界面**：告别命令行，全可视化操作
 - **用户卡片管理**：最多 4 个账号，按学校和学号区分；不同学校可保存同名学号
@@ -24,7 +43,7 @@ PU 校园活动自动报名助手 —— 带图形界面的桌面应用，双击
 - **亮/暗主题**：一键切换，暖灰米色柔和护眼
 - **本地凭据保护**：Windows 使用当前用户的 DPAPI 保护密码和登录 Token
 
-## 快速开始（EXE 用户）
+## 🚀 快速开始（EXE 用户）
 
 ### 1. 下载
 
@@ -36,7 +55,7 @@ PU 校园活动自动报名助手 —— 带图形界面的桌面应用，双击
 
 > 当前 EXE 未做代码签名，Windows 可能显示 SmartScreen 提示。请先确认文件来自本仓库的 Releases，确认来源可信后再决定是否运行。
 
-## 源码运行
+## 🛠️ 源码运行
 
 ### 1. 环境要求
 
@@ -72,9 +91,9 @@ python main.py
 
 构建 Windows EXE 时，在已安装运行依赖的环境中安装 PyInstaller，再运行 `pyinstaller PU-SignUpBot-GUI.spec`。发布前应启动生成的 EXE，并对最终目录或 ZIP 运行 `python scripts/check_release.py <发布目录或ZIP路径>`。新版运行数据和日志写入 `%LOCALAPPDATA%\PU-SignUpBot-GUI`；旧版 EXE 旁的账号、设置和任务文件会在首次启动时复制到新目录，旧副本保留供核对。发布包不得包含账号文件、Token、日志或任务记录。
 
-## 使用教程
+## 🧭 使用教程
 
-### 第一步：添加用户
+### 👤 第一步：添加用户
 
 点击右上角 **"＋ 添加用户"**，三步向导：
 
@@ -84,7 +103,7 @@ python main.py
 
 > 最多添加 4 个用户。同学校的重复学号不能再次添加；不同学校的同名学号分别管理。
 
-### 第二步：选择活动
+### 🎯 第二步：选择活动
 
 点击用户卡片上的 **"选活动"** 按钮：
 
@@ -101,7 +120,7 @@ python main.py
 
 > **筛选规则**：同级维度内为"或"（勾选法学院 + 计算机学院 → 两个学院的活动都显示），跨维度为"且"（年级=2023 AND 分类=学术讲座 AND 院系=法学院）。
 
-### 第三步：一键报名
+### ⏱️ 第三步：一键报名
 
 首页会显示下一场报名时间与倒计时。点击右上角 **"▶ 开始等待报名"** 后启动已选活动并打开报名计划。每个活动会独立等待报名时间，程序自动完成：
 
@@ -117,7 +136,7 @@ python main.py
 
 报名计划中可按账号筛选，查看每项活动名称、报名时间和当前状态，也可单项开始、取消或移除。失败和取消的项目可单项重试；登录过期时可直接点击“重新登录”，其他失败可点击“详情”核对条件；已成功的项目不会因再次点击批量开始而重复报名。运行中意外退出的任务在重启后显示“待恢复”，须由你点击“检查并恢复”；程序会先检查登录、活动状态、报名时间和名额。已完成或取消的任务不会自动重启，结果可在“历史记录”中查看。
 
-### 其他操作
+### ⚙️ 其他操作
 
 | 操作                         | 方式                                                   |
 | ---------------------------- | ------------------------------------------------------ |
@@ -127,7 +146,7 @@ python main.py
 | 中止报名                     | 报名计划中点击单项"**取消**" 或"**⏹ 全部取消**"       |
 | 切换主题                     | 点击右上角 ☀/🌙 按钮                                  |
 
-## 常见问题
+## ❓ 常见问题
 
 **Q: 提示"登录失败，请检查用户名和密码"？**
 
@@ -157,7 +176,7 @@ python main.py
 
 当前版本最多保存 4 个账号。
 
-## 界面布局
+## 🖥️ 界面布局
 
 ![1791384743566](image/README/1791384743566.png)
 
@@ -165,7 +184,7 @@ python main.py
 
 ![1791384714180](image/README/1791384714180.png)
 
-## 项目结构
+## 📦 项目结构
 
 ```
 ├── main.py                   # 入口
@@ -200,13 +219,13 @@ python main.py
 └── ui/pages/contributors/    # 贡献者头像
 ```
 
-## 安全
+## 🔐 安全
 
 Windows 版会加密保存密码和登录信息。升级时，程序会复制旧账号数据；确认新版运行正常后，请自行清理旧副本，不要分享账号文件。换电脑或重装系统后，可能需要重新登录。非 Windows 源码版的本地保护较弱，请勿在公共电脑上保存账号。
 
 PU 的接口和规则可能变化，请遵守学校及平台规定；程序无法保证报名成功。
 
-## 致谢
+## 🙏 致谢
 
 感谢 [RedForestLonvor](https://github.com/RedForestLonvor) 开发原项目 [PU-SignUpBot](https://github.com/RedForestLonvor/PU-SignUpBot)，为本项目提供最初的思路与核心逻辑；也感谢以下所有贡献者。点击头像或名字可访问 GitHub 主页。
 
@@ -219,10 +238,14 @@ PU 的接口和规则可能变化，请遵守学校及平台规定；程序无�
 | <a href="https://github.com/Mhenwa"></a>          | [Mhenwa](https://github.com/Mhenwa)                   | 项目贡献者 |
 | <a href="https://github.com/Ranch007"></a>        | [Ranch007](https://github.com/Ranch007)               | 项目贡献者 |
 
-## 许可证
+## 📄 许可证
 
 本项目按 [GNU GPL v3 或更高版本](LICENSE) 发布（SPDX：`GPL-3.0-or-later`）。分发修改后的源码或 EXE 时，请保留版权和许可证声明，并按 GPL 提供相应源码。
 
 ---
 
+<div align="center">
+
 **祝我们的大学生活不再受 PU 困扰！**
+
+</div>
